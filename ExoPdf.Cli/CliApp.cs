@@ -9,7 +9,14 @@ public static class CliApp
     /// <summary>Exit code for an unexpected failure. Expected failures use 1.</summary>
     public const int UnexpectedErrorExitCode = 2;
 
-    public static int Run(string[] args, IPdfMerger merger, InvocationConfiguration? configuration = null)
+    /// <summary>Exit code when the user interrupts (Ctrl+C), by shell convention 128 + SIGINT.</summary>
+    public const int CancelledExitCode = 130;
+
+    public static int Run(
+        string[] args,
+        IPdfMerger merger,
+        InvocationConfiguration? configuration = null,
+        CancellationToken cancellationToken = default)
     {
         configuration ??= new InvocationConfiguration();
 
@@ -18,7 +25,7 @@ public static class CliApp
         configuration.EnableDefaultExceptionHandler = false;
 
         var rootCommand = new RootCommand("ExoPdf — PDF manipulation utility");
-        rootCommand.Add(MergeCommand.Build(merger));
+        rootCommand.Add(MergeCommand.Build(merger, cancellationToken));
 
         try
         {
@@ -26,8 +33,9 @@ public static class CliApp
         }
         catch (Exception ex)
         {
-            // Last resort: a bug should read as a message, not a stack trace.
-            configuration.Error.WriteLine($"Unexpected error: {ex.Message}");
+            // Last resort: a bug should read as a message, not a stack trace. The type
+            // name is included so the message is useful in a bug report.
+            configuration.Error.WriteLine($"Unexpected error ({ex.GetType().Name}): {ex.Message}");
             return UnexpectedErrorExitCode;
         }
     }

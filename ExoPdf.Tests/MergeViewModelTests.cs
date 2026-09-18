@@ -187,6 +187,24 @@ public class MergeViewModelTests
     }
 
     [Fact]
+    public async Task Merge_MergesExactlyTheFilesShown_InTheShownOrder()
+    {
+        _finder.AddFolder(Folder, "b.pdf", "a.pdf");
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+
+        // The folder changes after the preview; the merge must still use the preview.
+        _finder.AddFolder(Folder, "a.pdf", "b.pdf", "surprise.pdf");
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        var options = Assert.Single(_merger.Calls);
+        Assert.Equal(Folder, options.SourceFolderPath);
+        Assert.Equal(
+            [Path.Combine(Folder, "b.pdf"), Path.Combine(Folder, "a.pdf")],
+            options.Files);
+    }
+
+    [Fact]
     public async Task Merge_SingleFileSinglePage_UsesSingularWords()
     {
         _finder.AddFolder(Folder, "a.pdf");

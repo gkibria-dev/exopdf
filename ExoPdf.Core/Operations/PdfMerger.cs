@@ -97,28 +97,59 @@ public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder,
 
     private int MergeFile(PdfDocument output, string filePath, int pageOffset)
     {
-        try
-        {
-            using var stream = fileSystem.File.OpenRead(filePath);
-            using var input = PdfReader.Open(stream, PdfDocumentOpenMode.Import);
-            output.Version = input.Version;
+        using var stream = ReadingFile(filePath, () => fileSystem.File.OpenRead(filePath));
+        using var input = ReadingFile(filePath, () => OpenPdf(stream));
 
+        output.Version = input.Version;
+        ReadingFile(filePath, () =>
+        {
             foreach (PdfPage page in input.Pages)
                 output.AddPage(page);
+        });
 
-            var fileBookmark = output.Outlines.Add(
-                fileSystem.Path.GetFileNameWithoutExtension(filePath),
-                output.Pages[pageOffset]);
+        // From here on it is our own code working on a file that read fine; a failure
+        // here is a bug and is deliberately not reported as an unreadable file.
+        var fileBookmark = output.Outlines.Add(
+            fileSystem.Path.GetFileNameWithoutExtension(filePath),
+            output.Pages[pageOffset]);
 
-            OutlineCopier.Copy(input, fileBookmark.Outlines, output, pageOffset);
+        OutlineCopier.Copy(input, fileBookmark.Outlines, output, pageOffset);
 
-            return input.PageCount;
+        return input.PageCount;
+    }
+
+    private static PdfDocument OpenPdf(Stream stream)
+    {
+        var document = PdfReader.Open(stream, PdfDocumentOpenMode.Import);
+        if (document.PageCount == 0)
+        {
+            document.Dispose();
+            throw new InvalidOperationException("The file contains no pages.");
+        }
+
+        return document;
+    }
+
+    /// <summary>
+    /// Runs a step that reads the source file. Whatever fails while reading (corrupt,
+    /// encrypted, locked, gone) is reported as that file being unreadable.
+    /// </summary>
+    private static T ReadingFile<T>(string filePath, Func<T> read)
+    {
+        try
+        {
+            return read();
         }
         catch (Exception ex) when (ex is not ExoPdfException and not OperationCanceledException)
         {
-            // Whatever went wrong while reading this one file (corrupt, encrypted,
-            // locked, gone), report it as that file being unreadable.
             throw new PdfUnreadableException(filePath, ex);
         }
     }
+
+    private static void ReadingFile(string filePath, Action read) =>
+        ReadingFile(filePath, () =>
+        {
+            read();
+            return 0;
+        });
 }

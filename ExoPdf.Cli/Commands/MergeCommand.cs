@@ -7,7 +7,8 @@ namespace ExoPdf.Cli.Commands;
 
 public static class MergeCommand
 {
-    public static Command Build(IPdfMerger merger)
+    /// <param name="cancellationToken">Cancelled on Ctrl+C, so an interrupted merge leaves no partial file.</param>
+    public static Command Build(IPdfMerger merger, CancellationToken cancellationToken = default)
     {
         var folderArgument = new Argument<DirectoryInfo>("folder")
         {
@@ -27,11 +28,16 @@ public static class MergeCommand
 
             try
             {
-                var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName });
+                var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName }, null, cancellationToken);
 
                 output.WriteLine($"Merged {result.FilesMerged} files ({result.TotalPages} pages)");
                 output.WriteLine($"Output: {result.OutputFilePath}");
                 return 0;
+            }
+            catch (OperationCanceledException)
+            {
+                error.WriteLine("Merge cancelled.");
+                return CliApp.CancelledExitCode;
             }
             catch (ExoPdfException ex)
             {

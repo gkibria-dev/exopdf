@@ -36,10 +36,12 @@ public static class FolderDropBehavior
         }
     }
 
+    // DragOver fires many times a second, so it must stay cheap: no file-system probing
+    // here. Whether the dropped item is a usable folder is decided once, on Drop.
     private static void OnDragOver(object sender, DragEventArgs e)
     {
         var command = GetCommand((DependencyObject)sender);
-        e.Effects = TryGetFolder(e.Data) is { } folder && command?.CanExecute(folder) == true
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && command?.CanExecute(null) == true
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;

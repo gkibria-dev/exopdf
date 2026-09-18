@@ -31,6 +31,30 @@ public class CliAppTests
     }
 
     [Fact]
+    public void Interrupt_PassesTheTokenToTheMerge()
+    {
+        using var cancellation = new CancellationTokenSource();
+
+        CliApp.Run(["merge", @"C:\docs"], _merger, new InvocationConfiguration { Output = _output, Error = _error }, cancellation.Token);
+
+        Assert.Equal(cancellation.Token, _merger.LastToken);
+    }
+
+    [Fact]
+    public void Interrupt_ReturnsTheInterruptExitCodeWithAMessage_AndWritesNoOutput()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var exitCode = CliApp.Run(
+            ["merge", @"C:\docs"], _merger, new InvocationConfiguration { Output = _output, Error = _error }, cancellation.Token);
+
+        Assert.Equal(CliApp.CancelledExitCode, exitCode);
+        Assert.Equal("Merge cancelled.", _error.ToString().Trim());
+        Assert.Equal("", _output.ToString());
+    }
+
+    [Fact]
     public void UnexpectedFailure_IsAMessageNotAStackTrace_AndReturnsTwo()
     {
         _merger.Exception = new NullReferenceException("a bug");
@@ -38,7 +62,7 @@ public class CliAppTests
         var exitCode = Run("merge", @"C:\docs");
 
         Assert.Equal(CliApp.UnexpectedErrorExitCode, exitCode);
-        Assert.Equal("Unexpected error: a bug", _error.ToString().Trim());
+        Assert.Equal("Unexpected error (NullReferenceException): a bug", _error.ToString().Trim());
         Assert.Equal("", _output.ToString());
     }
 }

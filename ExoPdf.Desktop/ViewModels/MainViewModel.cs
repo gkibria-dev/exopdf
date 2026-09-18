@@ -41,9 +41,10 @@ public partial class MainViewModel : ObservableObject
         if (e.PropertyName != nameof(PageViewModel.IsSelected) || sender is not PageViewModel page)
             return;
 
+        // Only a selection matters. When the user picks another entry, the radio group
+        // also unchecks the old one and writes false back; reacting to that here would
+        // fight the selection that is being made.
         if (page.IsSelected)
             CurrentPage = page;
-        else if (page == CurrentPage)
-            page.IsSelected = true; // the page being shown cannot be deselected
     }
 }

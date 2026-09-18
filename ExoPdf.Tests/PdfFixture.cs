@@ -21,6 +21,32 @@ internal static class PdfFixture
         return stream.ToArray();
     }
 
+    /// <summary>A structurally valid PDF whose page tree is empty. PDFsharp cannot save one, so it is written by hand.</summary>
+    internal static byte[] ZeroPagePdfBytes()
+    {
+        var objects = new[]
+        {
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+            "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+        };
+
+        var text = new System.Text.StringBuilder("%PDF-1.4\n");
+        var offsets = new List<int>();
+        foreach (var obj in objects)
+        {
+            offsets.Add(text.Length);
+            text.Append(obj);
+        }
+
+        var xrefOffset = text.Length;
+        text.Append("xref\n0 3\n0000000000 65535 f \n");
+        foreach (var offset in offsets)
+            text.Append($"{offset:D10} 00000 n \n");
+        text.Append($"trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF\n");
+
+        return System.Text.Encoding.ASCII.GetBytes(text.ToString());
+    }
+
     /// <summary>Writes a PDF to the real disk.</summary>
     internal static string CreatePdf(string folder, string fileName, int pageCount, params string[] bookmarkTitles)
     {

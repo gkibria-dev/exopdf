@@ -71,27 +71,39 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public void TryingToDeselectTheCurrentPage_IsUndone()
+    public void Deselecting_NeverChangesTheCurrentPage()
     {
         var vm = new MainViewModel([_merge, _settings]);
 
         _merge.IsSelected = false;
 
         Assert.Same(_merge, vm.CurrentPage);
-        Assert.True(_merge.IsSelected);
     }
 
     [Fact]
-    public void TryingToDeselectTheCurrentFooterPage_IsUndone()
+    public void TheRadioGroupUncheckingTheOldEntryBeforeCheckingTheNewOne_StillSwitchesPage()
     {
+        // The sidebar's radio group can write "old is no longer selected" before
+        // "new is selected". The switch must still end on the new page.
         var vm = new MainViewModel([_merge, _settings]);
+
+        _merge.IsSelected = false;
         _settings.IsSelected = true;
 
-        _settings.IsSelected = false;
+        Assert.Same(_settings, vm.CurrentPage);
+        Assert.Equal([_settings], Selected(_merge, _settings));
+    }
+
+    [Fact]
+    public void TheRadioGroupCheckingTheNewEntryBeforeUncheckingTheOldOne_StillSwitchesPage()
+    {
+        var vm = new MainViewModel([_merge, _settings]);
+
+        _settings.IsSelected = true;
+        _merge.IsSelected = false;
 
         Assert.Same(_settings, vm.CurrentPage);
-        Assert.True(_settings.IsSelected);
-        Assert.False(_merge.IsSelected);
+        Assert.Equal([_settings], Selected(_merge, _settings));
     }
 
     [Fact]

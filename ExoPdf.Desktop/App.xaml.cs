@@ -37,6 +37,11 @@ public partial class App : Application
             MessageBoxButton.OK,
             MessageBoxImage.Error);
         e.Handled = true;
+
+        // A failure before the window exists leaves nothing to interact with: exit
+        // instead of running on with no window.
+        if (MainWindow is null)
+            Shutdown(1);
     }
 
     protected override void OnExit(ExitEventArgs e)

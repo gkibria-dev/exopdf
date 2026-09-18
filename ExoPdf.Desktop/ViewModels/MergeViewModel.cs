@@ -120,7 +120,12 @@ public partial class MergeViewModel : PageViewModel
     [RelayCommand(CanExecute = nameof(CanMerge))]
     private async Task MergeAsync()
     {
-        var options = new MergeOptions { SourceFolderPath = SourceFolder! };
+        // Merge exactly the files the user was shown, not whatever the folder holds by now.
+        var options = new MergeOptions
+        {
+            SourceFolderPath = SourceFolder!,
+            Files = Files.Select(file => file.FullPath).ToList()
+        };
 
         IsBusy = true;
         ErrorMessage = null;

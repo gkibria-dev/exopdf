@@ -228,6 +228,20 @@ public class PdfMergerTests
     }
 
     [Fact]
+    public void Merge_PdfWithNoPages_IsReportedByNameWithTheReason()
+    {
+        AddPdf("a.pdf", 1);
+        var emptyPath = Path.Combine(Folder, "nopages.pdf");
+        _fileSystem.AddFile(emptyPath, new MockFileData(PdfFixture.ZeroPagePdfBytes()));
+
+        var exception = Assert.Throws<PdfUnreadableException>(RunMerge);
+
+        Assert.Equal(emptyPath, exception.FilePath);
+        Assert.Contains("no pages", exception.Message);
+        Assert.Equal(["a.pdf", "nopages.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+    }
+
+    [Fact]
     public void Merge_EmptyFile_IsReportedAsUnreadable()
     {
         _fileSystem.AddFile(Path.Combine(Folder, "empty.pdf"), new MockFileData(""));
