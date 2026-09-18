@@ -3,7 +3,7 @@
 **Date:** 2026-09-18
 **Branch:** feature/desktop-ui
 **Related requirements:** DUI-1 to DUI-23, DUI-N1 to DUI-N6, and the Merge ordering change in `docs/requirements.md`
-**Requirements commit:** d20644b
+**Requirements commit:** a1be034
 
 ## Goal
 
@@ -102,8 +102,9 @@ are not modified. Settings is a page but is pinned to the bottom of the sidebar.
 ### Core changes
 
 - Add `PdfMerger.GetSourceFiles(string folderPath)`: `*.pdf` files sorted by file
-  name with `StringComparer.OrdinalIgnoreCase`. `Merge` uses it. This changes the
-  CLI's merge order too, which was approved.
+  name with `StringComparer.OrdinalIgnoreCase`, excluding files that match
+  `Merge_<FolderName>_<14 digits>.pdf`. `Merge` uses it. This changes the CLI's
+  merge order and exclusion too, which was approved.
 - `Merge` and `GetSourceFiles` throw `DirectoryNotFoundException` for a missing
   folder, so every frontend gets a clear error.
 
@@ -113,9 +114,8 @@ are not modified. Settings is a page but is pinned to the bottom of the sidebar.
    `net10.0-windows` so it can reference Desktop. Build and run the existing 8
    tests to confirm the baseline.
 2. **Core.** Add `GetSourceFiles`, use it in `Merge`, and add the missing-folder
-   error. Tests: name order, case-insensitive order, empty folder, missing folder,
-   `GetSourceFiles` matches the merge order. Update the "Merge" section of
-   `requirements.md` if behaviour details change.
+   error. Tests: name order, case-insensitive order, previous merge output
+   excluded, empty folder, missing folder, `GetSourceFiles` matches the merge order.
 3. **Desktop scaffolding.** Add `Microsoft.Extensions.DependencyInjection`. Remove
    `StartupUri`; build the DI container in `App.OnStartup`. Add
    `<NoWarn>WPF0001</NoWarn>` to the Desktop project (ADR-005). Add the `Services`
@@ -138,15 +138,13 @@ are not modified. Settings is a page but is pinned to the bottom of the sidebar.
 10. `dotnet test`, then `/review` and `/security-review`, fix findings, commit, and
     open the PR linking this plan.
 
-## Open questions
+## Decisions made at approval
 
-1. **Merged output is picked up by the next merge.** The output file is saved in
-   the source folder, so merging the same folder twice includes the previous
-   `Merge_<Folder>_<timestamp>.pdf` in the second merge. The Desktop UI makes
-   repeat merges easy. Proposal: `GetSourceFiles` excludes files that match
-   `Merge_<FolderName>_<14 digits>.pdf`. This changes CLI behaviour too and needs
-   a line in the Merge section of `requirements.md`. If approved, it is added in
-   step 2. If not, the UI shows the previous output in the file list.
+- **Merged output is excluded from the next merge.** The output file is saved in
+  the source folder, so merging the same folder twice would include the previous
+  `Merge_<Folder>_<timestamp>.pdf`. Approved: `GetSourceFiles` skips files that
+  match `Merge_<FolderName>_<14 digits>.pdf`, for the CLI as well. Recorded in the
+  Merge section of `requirements.md`.
 
 ## Out of scope
 
