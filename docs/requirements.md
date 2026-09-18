@@ -48,6 +48,10 @@ Merge all PDF files in a folder into a single output PDF.
 - Files are merged in ascending file-name order (case-insensitive, ordinal).
   This applies to every frontend. User-defined ordering is a planned extension
   and is not yet specified.
+- Files that match this tool's own output name, `Merge_<FolderName>_<14 digits>.pdf`,
+  are skipped, so merging the same folder again does not include the previous
+  result. This applies to every frontend.
+- If the source folder does not exist, the operation fails with a clear error
 - Each source file produces a top-level bookmark named after the file
   (without the `.pdf` extension), pointing to its first page in the merged output
 - If a source file contains bookmarks, they are copied as children under that
