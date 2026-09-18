@@ -2,7 +2,7 @@
 
 ## Current state
 
-A single .NET 8 console app project (`PdfUtil/`). All PDF logic and console I/O
+A single .NET 8 console app project (`ExoPdf/`). All PDF logic and console I/O
 live in `Program.cs`. This is the starting point; the target structure below is
 the direction all new work moves toward.
 
@@ -11,10 +11,10 @@ the direction all new work moves toward.
 ## Target structure
 
 ```
-PdfUtil.sln
-├── PdfUtil.Core/          ← class library
-├── PdfUtil.Cli/           ← console app
-└── PdfUtil.Desktop/       ← WPF app
+ExoPdf.sln
+├── ExoPdf.Core/          ← class library
+├── ExoPdf.Cli/           ← console app
+└── ExoPdf.Desktop/       ← WPF app
 ```
 
 See [ADR-001](adr/001-multi-project-layout.md) for the rationale.
@@ -22,9 +22,9 @@ See [ADR-001](adr/001-multi-project-layout.md) for the rationale.
 ### Dependency direction
 
 ```
-PdfUtil.Cli ──→ PdfUtil.Core
-PdfUtil.Desktop ──→ PdfUtil.Core
-PdfUtil.Core ──→ (nothing in this solution)
+ExoPdf.Cli ──→ ExoPdf.Core
+ExoPdf.Desktop ──→ ExoPdf.Core
+ExoPdf.Core ──→ (nothing in this solution)
 ```
 
 Core has no reference to any UI project. Cli and Desktop are adapters that
@@ -32,13 +32,13 @@ translate user gestures into Core calls and display results.
 
 ---
 
-## PdfUtil.Core
+## ExoPdf.Core
 
 Contains all PDF logic. No dependency on `System.Console`, WPF, or any UI
 framework.
 
 ```
-PdfUtil.Core/
+ExoPdf.Core/
 ├── Operations/
 │   └── PdfMerger.cs
 └── Models/
@@ -57,13 +57,13 @@ PdfUtil.Core/
 
 ---
 
-## PdfUtil.Cli
+## ExoPdf.Cli
 
 Thin adapter. Parses arguments, constructs an options object, calls the
 corresponding Core operation, and writes the result to stdout.
 
 ```
-PdfUtil.Cli/
+ExoPdf.Cli/
 └── Commands/
     └── MergeCommand.cs
 ```
@@ -75,13 +75,13 @@ no PDF logic — only argument binding and output formatting.
 
 ---
 
-## PdfUtil.Desktop
+## ExoPdf.Desktop
 
 WPF application. Each operation has a ViewModel and a View. ViewModels call Core
 operations directly; Views contain no business logic.
 
 ```
-PdfUtil.Desktop/
+ExoPdf.Desktop/
 ├── ViewModels/
 │   └── MergeViewModel.cs
 └── Views/
