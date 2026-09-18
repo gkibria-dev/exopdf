@@ -21,15 +21,15 @@ Candidates evaluated:
 ## Decision
 
 Use **System.CommandLine** for argument parsing and subcommand routing in
-`PdfUtil.Cli`.
+`ExoPdf.Cli`.
 
 It is Microsoft's strategic investment for .NET CLI tooling, has first-class
 subcommand support (each PDF operation becomes a subcommand), and generates
 `--help` output automatically. Usage becomes:
 
 ```
-pdfutil merge <folder>
-pdfutil split <file> --pages 1-3
+exopdf merge <folder>
+exopdf split <file> --pages 1-3
 ```
 
 Spectre.Console may be added alongside System.CommandLine for output formatting

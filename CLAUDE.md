@@ -4,31 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A .NET 8 console utility that merges all PDF files in a given folder into a single output PDF. Uses the [PDFsharp](https://github.com/empira/PDFsharp) library (v6.2.4).
+**ExoPdf** — a Windows utility for common PDF manipulation tasks. Available as a CLI (`ExoPdf.Cli`) and a desktop GUI (`ExoPdf.Desktop`). All PDF logic lives in a shared `ExoPdf.Core` library.
 
 ## Commands
 
 ```powershell
 # Build
-dotnet build PdfUtil.sln
+dotnet build ExoPdf.slnx
 
-# Run
-dotnet run --project PdfUtil\PdfUtil.csproj
+# Run CLI
+dotnet run --project ExoPdf.Cli\ExoPdf.Cli.csproj -- merge <folder>
 
-# Publish self-contained executable
-dotnet publish PdfUtil\PdfUtil.csproj -c Release -r win-x64 --self-contained
+# Run Desktop
+dotnet run --project ExoPdf.Desktop\ExoPdf.Desktop.csproj
+
+# Publish CLI self-contained executable
+dotnet publish ExoPdf.Cli\ExoPdf.Cli.csproj -c Release -r win-x64 --self-contained
 ```
 
 ## Architecture
 
-Single-file console app (`PdfUtil/Program.cs`):
+Three-project solution. See [docs/architecture.md](docs/architecture.md) for full detail.
 
-- Prompts user for a folder path at runtime
-- Scans the folder for `*.pdf` files
-- Opens each PDF in `Import` mode via `PdfReader.Open` and copies all pages into a single `PdfDocument`
-- Saves the merged result as `Merge_<FolderName>_<yyyyMMddHHmmss>.pdf` inside the same source folder
-
-The PDF version of the output is set to match the last-processed input file's version (each file overwrites `outputPDFDocument.Version`).
+- **`ExoPdf.Core`** — all PDF logic; no UI dependencies
+- **`ExoPdf.Cli`** — CLI adapter using `System.CommandLine`
+- **`ExoPdf.Desktop`** — WPF GUI using `CommunityToolkit.Mvvm`
 
 ## Docs
 

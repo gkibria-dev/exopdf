@@ -21,8 +21,8 @@ service.
 
 | Frontend | Description |
 |---|---|
-| CLI (`PdfUtil.Cli`) | Subcommand-based; scriptable and pipeline-friendly |
-| Desktop (`PdfUtil.Desktop`) | WPF GUI for interactive use |
+| CLI (`ExoPdf.Cli`) | Subcommand-based; scriptable and pipeline-friendly |
+| Desktop (`ExoPdf.Desktop`) | WPF GUI for interactive use |
 
 Both frontends are optional install targets — a user may use one or both.
 
@@ -56,7 +56,7 @@ Merge all PDF files in a folder into a single output PDF.
 
 **CLI usage**
 ```
-pdfutil merge <folder>
+exopdf merge <folder>
 ```
 
 ---

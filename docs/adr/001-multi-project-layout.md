@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-The tool started as a single console app (`PdfUtil/Program.cs`). Two planned
+The tool started as a single console app (`ExoPdf/Program.cs`). Two planned
 expansions make that structure untenable:
 
 1. Multiple PDF operations (merge, split, extract, watermark, etc.)
@@ -20,10 +20,10 @@ duplicating the PDF logic or coupling the GUI to console-specific code.
 Split the solution into three projects:
 
 ```
-PdfUtil.sln
-├── PdfUtil.Core      ← class library: all PDF operations, no UI dependencies
-├── PdfUtil.Cli       ← console app, references Core
-└── PdfUtil.Desktop   ← WPF app, references Core
+ExoPdf.sln
+├── ExoPdf.Core      ← class library: all PDF operations, no UI dependencies
+├── ExoPdf.Cli       ← console app, references Core
+└── ExoPdf.Desktop   ← WPF app, references Core
 ```
 
 **Dependency rule:** Core has no knowledge of its callers. Cli and Desktop are
