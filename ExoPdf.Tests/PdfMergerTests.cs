@@ -260,4 +260,168 @@ public class PdfMergerTests
 
         Assert.Equal(before, _fileSystem.File.ReadAllBytes(Path.Combine(Folder, "a.pdf")));
     }
+
+    // --- progress -----------------------------------------------------------
+
+    [Fact]
+    public void Merge_ReportsProgressAfterEachFile()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 1);
+        AddPdf("c.pdf", 1);
+        var progress = new RecordingProgress<MergeProgress>();
+
+        _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress);
+
+        Assert.Equal(
+            [new MergeProgress(1, 3, "a.pdf"), new MergeProgress(2, 3, "b.pdf"), new MergeProgress(3, 3, "c.pdf")],
+            progress.Reports);
+    }
+
+    [Fact]
+    public void Merge_WithoutAProgressSink_StillWorks()
+    {
+        AddPdf("a.pdf", 1);
+
+        Assert.Equal(1, _merger.Merge(new MergeOptions { SourceFolderPath = Folder }).FilesMerged);
+    }
+
+    // --- cancellation -------------------------------------------------------
+
+    [Fact]
+    public void Merge_AlreadyCancelled_ThrowsAndLeavesNothingBehind()
+    {
+        AddPdf("a.pdf", 1);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(
+            () => _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, null, cts.Token));
+
+        Assert.Equal(["a.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void Merge_CancelledBetweenFiles_StopsWithoutMergingTheRestAndLeavesNoOutput()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 1);
+        AddPdf("c.pdf", 1);
+        using var cts = new CancellationTokenSource();
+        var progress = new RecordingProgress<MergeProgress>(report =>
+        {
+            if (report.FilesCompleted == 1)
+                cts.Cancel();
+        });
+
+        Assert.Throws<OperationCanceledException>(
+            () => _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress, cts.Token));
+
+        Assert.Single(progress.Reports);
+        Assert.Equal(["a.pdf", "b.pdf", "c.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void Merge_CancelledAfterTheLastFile_StillPublishesNothing()
+    {
+        AddPdf("a.pdf", 1);
+        using var cts = new CancellationTokenSource();
+        var progress = new RecordingProgress<MergeProgress>(_ => cts.Cancel());
+
+        Assert.Throws<OperationCanceledException>(
+            () => _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress, cts.Token));
+
+        Assert.Equal(["a.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+    }
+
+    // --- explicit file lists ------------------------------------------------
+
+    private MergeResult RunMergeOf(params string[] fileNames) => _merger.Merge(new MergeOptions
+    {
+        SourceFolderPath = Folder,
+        Files = fileNames.Select(name => Path.Combine(Folder, name)).ToList()
+    });
+
+    [Fact]
+    public void Merge_ExplicitFiles_AreMergedInTheGivenOrder()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 1);
+
+        using var output = OpenOutput(RunMergeOf("b.pdf", "a.pdf"));
+
+        Assert.Equal(["b", "a"], Titles(output.Outlines));
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_OnlyThoseFilesAreMerged()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 2);
+        AddPdf("c.pdf", 4);
+
+        var result = RunMergeOf("a.pdf", "c.pdf");
+
+        Assert.Equal(2, result.FilesMerged);
+        Assert.Equal(5, result.TotalPages);
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_OutputGoesToTheSourceFolder()
+    {
+        AddPdf("a.pdf", 1);
+
+        var result = RunMergeOf("a.pdf");
+
+        Assert.Equal(Path.Combine(Folder, "Merge_Invoices_20260918103005.pdf"), result.OutputFilePath);
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_FromAnotherFolder_AreAccepted()
+    {
+        _fileSystem.AddFile(@"C:\other\x.pdf", new MockFileData(PdfFixture.PdfBytes(2)));
+
+        var result = _merger.Merge(new MergeOptions { SourceFolderPath = Folder, Files = [@"C:\other\x.pdf"] });
+
+        Assert.Equal(2, result.TotalPages);
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_MissingFile_IsReportedByName()
+    {
+        AddPdf("a.pdf", 1);
+
+        var exception = Assert.Throws<PdfUnreadableException>(() => RunMergeOf("a.pdf", "gone.pdf"));
+
+        Assert.Contains("gone.pdf", exception.Message);
+    }
+
+    [Fact]
+    public void Merge_ExplicitEmptyList_Throws()
+    {
+        AddPdf("a.pdf", 1);
+
+        Assert.Throws<NoPdfFilesException>(() => RunMergeOf());
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_MissingOutputFolder_Throws()
+    {
+        _fileSystem.AddFile(@"C:\other\x.pdf", new MockFileData(PdfFixture.PdfBytes(1)));
+
+        Assert.Throws<SourceFolderNotFoundException>(() => _merger.Merge(new MergeOptions
+        {
+            SourceFolderPath = @"C:\docs\missing",
+            Files = [@"C:\other\x.pdf"]
+        }));
+    }
+
+    [Fact]
+    public void Merge_ExplicitFiles_IgnoreTheFolderScan()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 1);
+
+        Assert.Equal(1, RunMergeOf("a.pdf").FilesMerged);
+    }
 }

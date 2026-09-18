@@ -9,9 +9,12 @@ namespace ExoPdf.Core.Operations;
 
 public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder, MergeOutputNamer namer) : IPdfMerger
 {
-    public MergeResult Merge(MergeOptions options)
+    public MergeResult Merge(
+        MergeOptions options,
+        IProgress<MergeProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        var files = finder.Find(options.SourceFolderPath);
+        var files = ResolveFiles(options);
         if (files.Count == 0)
             throw new NoPdfFilesException(options.SourceFolderPath);
 
@@ -24,9 +27,15 @@ public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder,
 
             using (PdfDocument output = new())
             {
-                foreach (var file in files)
-                    totalPages += MergeFile(output, file, totalPages);
+                for (int i = 0; i < files.Count; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
+                    totalPages += MergeFile(output, files[i], totalPages);
+                    progress?.Report(new MergeProgress(i + 1, files.Count, fileSystem.Path.GetFileName(files[i])));
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
                 Write(output, tempFilePath, outputFilePath, options.SourceFolderPath);
             }
 
@@ -55,6 +64,19 @@ public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder,
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
         }
+    }
+
+    private IReadOnlyList<string> ResolveFiles(MergeOptions options)
+    {
+        if (options.Files is null)
+            return finder.Find(options.SourceFolderPath);
+
+        // The finder checks the folder when it scans it; with an explicit list the
+        // folder is only the output location, so check it here.
+        if (!fileSystem.Directory.Exists(options.SourceFolderPath))
+            throw new SourceFolderNotFoundException(options.SourceFolderPath);
+
+        return options.Files;
     }
 
     /// <summary>Saves to a temporary file, then moves it into place, so only a complete file is ever published.</summary>

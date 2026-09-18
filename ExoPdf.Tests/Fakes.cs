@@ -93,10 +93,25 @@ internal class FakePdfMerger : IPdfMerger
     /// <summary>When set, <see cref="Merge"/> blocks until the gate is opened.</summary>
     public ManualResetEventSlim? Gate { get; set; }
 
-    public MergeResult Merge(MergeOptions options)
+    /// <summary>The progress sink and token the last call received.</summary>
+    public IProgress<MergeProgress>? LastProgress { get; private set; }
+
+    public CancellationToken LastToken { get; private set; }
+
+    /// <summary>Reports made through the progress sink before the merge waits at the gate.</summary>
+    public List<MergeProgress> ProgressToReport { get; } = [];
+
+    public MergeResult Merge(MergeOptions options, IProgress<MergeProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         Calls.Add(options);
+        LastProgress = progress;
+        LastToken = cancellationToken;
+
+        foreach (var report in ProgressToReport)
+            progress?.Report(report);
+
         Gate?.Wait();
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (Exception is not null)
             throw Exception;
@@ -107,5 +122,21 @@ internal class FakePdfMerger : IPdfMerger
             FilesMerged = 1,
             TotalPages = 1
         };
+    }
+}
+
+/// <summary>A synchronous <see cref="IProgress{T}"/>: reports are recorded on the calling thread, in order.</summary>
+internal class RecordingProgress<T> : IProgress<T>
+{
+    private readonly Action<T>? _onReport;
+
+    public RecordingProgress(Action<T>? onReport = null) => _onReport = onReport;
+
+    public List<T> Reports { get; } = [];
+
+    public void Report(T value)
+    {
+        Reports.Add(value);
+        _onReport?.Invoke(value);
     }
 }
