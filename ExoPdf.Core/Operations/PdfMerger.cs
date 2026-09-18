@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ExoPdf.Core.Models;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
@@ -6,12 +7,35 @@ namespace ExoPdf.Core.Operations;
 
 public class PdfMerger
 {
+    /// <summary>
+    /// Returns the PDF files that <see cref="Merge"/> would combine, in merge order:
+    /// ascending file name, case-insensitive. Output files from previous merges of
+    /// the same folder are excluded.
+    /// </summary>
+    public IReadOnlyList<string> GetSourceFiles(string folderPath)
+    {
+        if (!Directory.Exists(folderPath))
+            throw new DirectoryNotFoundException($"Folder not found: {folderPath}");
+
+        var previousOutput = new Regex(
+            $"^Merge_{Regex.Escape(GetFolderName(folderPath))}_\\d{{14}}\\.pdf$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return Directory.GetFiles(folderPath, "*.pdf")
+            .Where(file => !previousOutput.IsMatch(Path.GetFileName(file)))
+            .OrderBy(file => Path.GetFileName(file), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public MergeResult Merge(MergeOptions options)
     {
-        var files = Directory.GetFiles(options.SourceFolderPath, "*.pdf");
+        var files = GetSourceFiles(options.SourceFolderPath);
+        if (files.Count == 0)
+            throw new InvalidOperationException($"No PDF files to merge in: {options.SourceFolderPath}");
+
         var outputFilePath = Path.Combine(
             options.SourceFolderPath,
-            $"Merge_{Path.GetFileName(options.SourceFolderPath)}_{DateTime.Now:yyyyMMddHHmmss}.pdf");
+            $"Merge_{GetFolderName(options.SourceFolderPath)}_{DateTime.Now:yyyyMMddHHmmss}.pdf");
 
         using PdfDocument output = new();
         int pageOffset = 0;
@@ -24,10 +48,13 @@ public class PdfMerger
         return new MergeResult
         {
             OutputFilePath = outputFilePath,
-            FilesMerged = files.Length,
+            FilesMerged = files.Count,
             TotalPages = pageOffset
         };
     }
+
+    private static string GetFolderName(string folderPath) =>
+        Path.GetFileName(Path.TrimEndingDirectorySeparator(folderPath));
 
     private static int MergeFile(PdfDocument output, string filePath, int pageOffset)
     {
