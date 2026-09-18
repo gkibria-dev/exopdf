@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```powershell
 # Build
-dotnet build ExoPdf.sln
+dotnet build ExoPdf.slnx
 
 # Run CLI
 dotnet run --project ExoPdf.Cli\ExoPdf.Cli.csproj -- merge <folder>
