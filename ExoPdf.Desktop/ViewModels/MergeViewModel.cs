@@ -15,6 +15,7 @@ public partial class MergeViewModel : PageViewModel
     private readonly IFolderPicker _folderPicker;
     private readonly IShellLauncher _shell;
     private readonly ISettingsService _settings;
+    private readonly IUiThread _uiThread;
 
     private CancellationTokenSource? _cancellation;
 
@@ -35,6 +36,11 @@ public partial class MergeViewModel : PageViewModel
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyPropertyChangedFor(nameof(CanChangeFolder))]
     private bool _isBusy;
+
+    /// <summary>True once every file has been merged and the output is being written; that cannot be cancelled.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    private bool _isSaving;
 
     /// <summary>True while the files of the selected folder are being listed.</summary>
     [ObservableProperty]
@@ -65,7 +71,13 @@ public partial class MergeViewModel : PageViewModel
     [ObservableProperty]
     private string _progressText = "";
 
-    public MergeViewModel(IPdfMerger merger, IMergeSourceFinder finder, IFolderPicker folderPicker, IShellLauncher shell, ISettingsService settings)
+    public MergeViewModel(
+        IPdfMerger merger,
+        IMergeSourceFinder finder,
+        IFolderPicker folderPicker,
+        IShellLauncher shell,
+        ISettingsService settings,
+        IUiThread uiThread)
         : base("Merge", "\uE8C8")
     {
         _merger = merger;
@@ -73,6 +85,7 @@ public partial class MergeViewModel : PageViewModel
         _folderPicker = folderPicker;
         _shell = shell;
         _settings = settings;
+        _uiThread = uiThread;
     }
 
     /// <summary>
@@ -148,6 +161,7 @@ public partial class MergeViewModel : PageViewModel
         };
 
         IsBusy = true;
+        IsSaving = false;
         ErrorMessage = null;
         NoticeMessage = null;
         Result = null;
@@ -160,9 +174,10 @@ public partial class MergeViewModel : PageViewModel
 
         try
         {
-            // Reports are handled directly on the merging thread: WPF bindings marshal
-            // property changes to the UI thread, and tests see them in order.
-            var progress = new DirectProgress<MergeProgress>(OnProgress);
+            // Reports arrive on the merging thread and are posted to the UI thread, where
+            // OnProgress may safely change command state; WPF does not marshal that.
+            // Posts run in order, and all of them are queued before this method resumes.
+            var progress = new DirectProgress<MergeProgress>(report => _uiThread.Post(() => OnProgress(report)));
             var result = await Task.Run(() => _merger.Merge(options, progress, cancellation.Token), cancellation.Token);
             Result = new MergeResultViewModel(result, _shell);
         }
@@ -179,20 +194,37 @@ public partial class MergeViewModel : PageViewModel
         finally
         {
             _cancellation = null;
+            IsSaving = false;
             IsBusy = false;
         }
     }
 
     private bool CanMerge() => HasFiles && !IsBusy && !IsLoadingFiles;
 
-    [RelayCommand(CanExecute = nameof(IsBusy))]
+    // Once saving has started the token is no longer checked, so Cancel would do nothing.
+    private bool CanCancel() => IsBusy && !IsSaving;
+
+    [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel() => _cancellation?.Cancel();
 
     private void OnProgress(MergeProgress progress)
     {
+        // A report posted just before the merge ended can arrive after it; drop it.
+        if (!IsBusy)
+            return;
+
         FilesCompleted = progress.FilesCompleted;
         TotalFiles = progress.TotalFiles;
-        ProgressText = $"Merged {progress.FilesCompleted} of {progress.TotalFiles}: {progress.CurrentFile}";
+
+        if (progress.Stage == MergeStage.Saving)
+        {
+            IsSaving = true;
+            ProgressText = "Saving merged file…";
+        }
+        else
+        {
+            ProgressText = $"Merged {progress.FilesCompleted} of {progress.TotalFiles}: {progress.CurrentFile}";
+        }
     }
 
     /// <summary>
