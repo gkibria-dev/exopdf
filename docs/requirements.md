@@ -60,7 +60,8 @@ Merge all PDF files in a folder into a single output PDF.
 - If a source file cannot be read as a PDF, the operation fails with a message that
   names the file, and no output is created.
 - The operation reports progress (files completed out of total) and can be
-  cancelled between files.
+  cancelled between files. After the last file it reports that it is saving the
+  output; from then on it can no longer be cancelled.
 - The Core API accepts either a folder or an explicit ordered list of files to
   merge. No frontend uses the list yet (see DUI-17 and DUI-18).
 - Each source file produces a top-level bookmark named after the file
@@ -108,6 +109,7 @@ Priority: **Must** = required for the first release of the UI.
 | DUI-15 | Must | Errors (no PDFs, unreadable or locked file, folder not found) appear as a clear message in the view. The application does not crash. |
 | DUI-16 | Must | Merge behaviour, output naming and bookmarks are those defined under **Merge** above and come from `ExoPdf.Core`. The UI adds no PDF logic. |
 | DUI-19 | Should | While merging, the view shows progress (files completed of total) and a Cancel button. Cancelling leaves no output file and shows a neutral "Merge cancelled" message, not an error. |
+| DUI-26 | Should | Once every file has been merged, the view shows that the merged file is being saved: the progress becomes indeterminate and Cancel is disabled, because a save cannot be cancelled. The progress never reads as finished while work is still running. |
 | DUI-25 | Should | Listing a folder does not block the window. While the files are being listed the view shows a loading state, and choosing another folder replaces a listing that is still running (the latest choice wins). The last-used folder is listed after the window appears, not before. This applies DUI-N3 to folder listing. |
 | DUI-17 | Later | The user reorders or deselects files before merging. |
 | DUI-18 | Later | The user adds individual files instead of, or in addition to, a folder. |
