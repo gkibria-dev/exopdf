@@ -102,10 +102,38 @@ internal class FakeMergeSourceFinder : IMergeSourceFinder
     public void AddFolder(string folder, params string[] fileNames) =>
         _folders[folder] = fileNames.Select(name => Path.Combine(folder, name)).ToList();
 
-    public IReadOnlyList<string> Find(string folderPath) =>
-        _folders.TryGetValue(folderPath, out var files)
+    private readonly Dictionary<string, ManualResetEventSlim> _gates = [];
+    private readonly Dictionary<string, Exception> _failures = [];
+    private int _findCount;
+
+    /// <summary>Makes <see cref="Find"/> for this folder throw the given exception.</summary>
+    public void Fail(string folder, Exception exception) => _failures[folder] = exception;
+
+    /// <summary>How many times <see cref="Find"/> has been called, from any thread.</summary>
+    public int FindCount => Volatile.Read(ref _findCount);
+
+    /// <summary>Makes <see cref="Find"/> for this folder block until the returned gate is set, like a slow network share.</summary>
+    public ManualResetEventSlim Hold(string folder)
+    {
+        var gate = new ManualResetEventSlim(false);
+        _gates[folder] = gate;
+        return gate;
+    }
+
+    public IReadOnlyList<string> Find(string folderPath)
+    {
+        Interlocked.Increment(ref _findCount);
+
+        if (_gates.TryGetValue(folderPath, out var gate))
+            gate.Wait();
+
+        if (_failures.TryGetValue(folderPath, out var failure))
+            throw failure;
+
+        return _folders.TryGetValue(folderPath, out var files)
             ? files
             : throw new SourceFolderNotFoundException(folderPath);
+    }
 }
 
 internal class FakePdfMerger : IPdfMerger

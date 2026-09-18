@@ -32,8 +32,13 @@ They are small custom styles owned by this project.
   diagnostic `WPF0001`. Setting it in XAML does not. The Desktop project
   suppresses `WPF0001` (project-wide, in its `.csproj`), and all runtime theme
   switching lives in one class, `ThemeService`, so an API change touches one file.
-- The Fluent theme is designed for Windows 11. Its behaviour on Windows 10 must be
-  checked during implementation.
+- The Fluent theme is designed for Windows 11. Checked on Windows 10 (build 19045):
+  the window contents are themed correctly and follow a change of the Windows app
+  mode while the app runs, but the native title bar stays light. `ThemeService`
+  therefore also sets `DWMWA_USE_IMMERSIVE_DARK_MODE` on each window. Windows only
+  repaints the title bar when its active state changes, so it toggles `WM_NCACTIVATE`
+  afterwards (`RedrawWindow` and `SWP_FRAMECHANGED` had no effect). Windows 11 has
+  not been tested; there the extra call should change nothing.
 - If the theme API is removed or changed incompatibly, or if the project needs
   controls the built-in theme lacks, revisit this ADR. WPF-UI is the likely
   replacement.

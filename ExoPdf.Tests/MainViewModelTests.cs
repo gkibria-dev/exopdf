@@ -152,6 +152,51 @@ public class MainViewModelTests
     }
 
     [Fact]
+    public async Task InitializeAsync_LetsEveryPageDoItsStartUpWork()
+    {
+        var first = new InitializingPage("First");
+        var footer = new InitializingPage("Footer", NavigationPlacement.Footer);
+        var vm = new MainViewModel([first, footer]);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(1, first.InitializeCount);
+        Assert.Equal(1, footer.InitializeCount);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_APageWithNoStartUpWork_Completes()
+    {
+        var vm = new MainViewModel([_merge, _settings]);
+
+        await vm.InitializeAsync();
+
+        Assert.Same(_merge, vm.CurrentPage);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_AFailingPage_SurfacesTheError()
+    {
+        var vm = new MainViewModel([new InitializingPage("Broken") { Failure = new InvalidOperationException("boom") }]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(vm.InitializeAsync);
+    }
+
+    private sealed class InitializingPage(string title, NavigationPlacement placement = NavigationPlacement.Main)
+        : PageViewModel(title, "", placement)
+    {
+        public int InitializeCount { get; private set; }
+
+        public Exception? Failure { get; init; }
+
+        public override Task InitializeAsync()
+        {
+            InitializeCount++;
+            return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+        }
+    }
+
+    [Fact]
     public void NoPages_Throws()
     {
         Assert.Throws<ArgumentException>(() => new MainViewModel([]));

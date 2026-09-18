@@ -32,6 +32,12 @@ public abstract class PageViewModel : ObservableObject
     public NavigationPlacement Placement { get; }
 
     /// <summary>
+    /// Work a page does when the application starts, awaited after the window is shown so
+    /// that slow work cannot delay it. Override where needed.
+    /// </summary>
+    public virtual Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
     /// Whether this is the page being shown. Bound two-way to the sidebar entry;
     /// <see cref="MainViewModel"/> keeps exactly one page selected.
     /// </summary>

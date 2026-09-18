@@ -68,6 +68,11 @@
                                VerticalAlignment="Center" />
                 </DockPanel>
 
+                <!-- Shown while the folder is being read; a slow folder never blocks the window. -->
+                <ProgressBar Grid.Row="0" IsIndeterminate="True" Height="2" VerticalAlignment="Bottom"
+                             AutomationProperties.Name="Reading the folder"
+                             Visibility="{Binding IsLoadingFiles, Converter={StaticResource BoolToVisibility}}" />
+
                 <ListBox Grid.Row="1" ItemsSource="{Binding Files}" BorderThickness="0" Background="Transparent"
                          AutomationProperties.Name="PDF files to merge">
                     <ListBox.ItemContainerStyle>

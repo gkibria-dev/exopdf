@@ -29,12 +29,12 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public void SelectFolder_ListsFilesInTheOrderTheFinderReturnsThem()
+    public async Task SelectFolder_ListsFilesInTheOrderTheFinderReturnsThem()
     {
         _finder.AddFolder(Folder, "a.pdf", "b.pdf");
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.Equal(["a.pdf", "b.pdf"], vm.Files.Select(f => f.Name));
         Assert.Equal("2 files", vm.FileCountText);
@@ -42,23 +42,23 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public void SelectFolder_SingleFile_UsesSingularCount()
+    public async Task SelectFolder_SingleFile_UsesSingularCount()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.Equal("1 file", vm.FileCountText);
     }
 
     [Fact]
-    public void SelectFolder_WithNoPdfs_ShowsEmptyStateAndCannotMerge()
+    public async Task SelectFolder_WithNoPdfs_ShowsEmptyStateAndCannotMerge()
     {
         _finder.AddFolder(Folder);
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.False(vm.HasFiles);
         Assert.Equal("No PDF files were found in this folder.", vm.EmptyStateText);
@@ -66,11 +66,11 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public void SelectFolder_Missing_ShowsErrorAndDoesNotRememberIt()
+    public async Task SelectFolder_Missing_ShowsErrorAndDoesNotRememberIt()
     {
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.True(vm.HasError);
         Assert.Empty(vm.Files);
@@ -81,48 +81,63 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public void SelectFolder_BlankPath_IsIgnored()
+    public async Task SelectFolder_BlankPath_IsIgnored()
     {
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute("  ");
+        await vm.SelectFolderCommand.ExecuteAsync("  ");
 
         Assert.False(vm.HasFolder);
         Assert.False(vm.HasError);
     }
 
     [Fact]
-    public void SelectFolder_SameFolderAgain_RefreshesList()
+    public async Task SelectFolder_SameFolderAgain_RefreshesList()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         _finder.AddFolder(Folder, "a.pdf", "b.pdf");
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.Equal(2, vm.Files.Count);
     }
 
     [Fact]
-    public void SelectFolder_RemembersFolderInSettings()
+    public async Task SelectFolder_RemembersFolderInSettings()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
 
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         Assert.Equal(Folder, _settings.Current.LastMergeFolder);
         Assert.Equal(1, _settings.UpdateCount);
     }
 
+    // --- start-up restore ---------------------------------------------------
+
     [Fact]
-    public void NewViewModel_RestoresLastFolderIfItCanStillBeListed()
+    public void NewViewModel_DoesNotTouchTheFileSystemUntilInitialized()
     {
         _finder.AddFolder(Folder, "a.pdf");
         _settings.Current = new AppSettings { LastMergeFolder = Folder };
 
         var vm = CreateViewModel();
+
+        Assert.Equal(0, _finder.FindCount);
+        Assert.False(vm.HasFolder);
+    }
+
+    [Fact]
+    public async Task Initialize_RestoresLastFolderIfItCanStillBeListed()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+
+        await vm.InitializeAsync();
 
         Assert.Equal(Folder, vm.SourceFolder);
         Assert.Single(vm.Files);
@@ -130,39 +145,268 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public void NewViewModel_DropsLastFolderThatNoLongerExists_WithoutAnError()
+    public async Task Initialize_DropsLastFolderThatNoLongerExists_WithoutAnError()
     {
         _settings.Current = new AppSettings { LastMergeFolder = Folder };
-
         var vm = CreateViewModel();
+
+        await vm.InitializeAsync();
 
         Assert.False(vm.HasFolder);
         Assert.False(vm.HasError);
+        Assert.False(vm.IsLoadingFiles);
         Assert.Equal("Choose a folder to see the PDFs that will be merged.", vm.EmptyStateText);
     }
 
     [Fact]
-    public void Browse_PickedFolder_IsSelected()
+    public async Task Initialize_AnUnusableLastFolder_NeverShowsAnError_NotEvenBriefly()
+    {
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+        var errorAnnouncements = new List<string?>();
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MergeViewModel.HasError) or nameof(MergeViewModel.ErrorMessage))
+                errorAnnouncements.Add(e.PropertyName);
+        };
+
+        await vm.InitializeAsync();
+
+        Assert.Empty(errorAnnouncements);
+        Assert.False(vm.HasFolder);
+    }
+
+    [Fact]
+    public async Task Initialize_ThenTheUserPicksTheSameBrokenFolder_TheUserStillGetsTheError()
+    {
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var gate = _finder.Hold(Folder); // not registered: both listings fail once released
+        var vm = CreateViewModel();
+        var starting = vm.InitializeAsync();
+
+        var picking = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        gate.Set();
+        await picking;
+        await starting;
+
+        Assert.Equal(Folder, vm.SourceFolder);
+        Assert.True(vm.HasError);
+        Assert.False(vm.IsLoadingFiles);
+    }
+
+    [Fact]
+    public async Task Initialize_WithNoLastFolder_DoesNothing()
+    {
+        var vm = CreateViewModel();
+
+        await vm.InitializeAsync();
+
+        Assert.False(vm.HasFolder);
+        Assert.Equal(0, _finder.FindCount);
+    }
+
+    [Fact]
+    public async Task Initialize_ASlowLastFolder_ShowsLoadingWhileTheWindowIsAlreadyUsable()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var gate = _finder.Hold(Folder);
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+
+        var starting = vm.InitializeAsync();
+
+        Assert.False(starting.IsCompleted);
+        Assert.True(vm.IsLoadingFiles);
+        Assert.True(vm.BrowseCommand.CanExecute(null));
+
+        gate.Set();
+        await starting;
+
+        Assert.Single(vm.Files);
+        Assert.False(vm.IsLoadingFiles);
+    }
+
+    [Fact]
+    public async Task Initialize_TheUserPicksAnotherFolderMeanwhile_KeepsTheUsersChoice()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(Folder, "a.pdf");
+        _finder.AddFolder(other, "b.pdf");
+        var gate = _finder.Hold(Folder);
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+        var starting = vm.InitializeAsync();
+
+        await vm.SelectFolderCommand.ExecuteAsync(other);
+        gate.Set();
+        await starting;
+
+        Assert.Equal(other, vm.SourceFolder);
+        Assert.Equal(["b.pdf"], vm.Files.Select(f => f.Name));
+    }
+
+    [Fact]
+    public async Task Initialize_TheUserPicksAnotherFolderMeanwhile_AndTheOldOneIsGone_DoesNotDropTheNewChoice()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(other, "b.pdf");
+        var gate = _finder.Hold(Folder); // Folder is not registered: it will fail once released
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+        var starting = vm.InitializeAsync();
+
+        await vm.SelectFolderCommand.ExecuteAsync(other);
+        gate.Set();
+        await starting;
+
+        Assert.Equal(other, vm.SourceFolder);
+        Assert.False(vm.HasError);
+    }
+
+    // --- loading ------------------------------------------------------------
+
+    [Fact]
+    public async Task SelectFolder_WhileListing_ShowsLoadingAndDisablesMerge()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var gate = _finder.Hold(Folder);
+        var vm = CreateViewModel();
+
+        var selecting = vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        Assert.True(vm.IsLoadingFiles);
+        Assert.Equal(Folder, vm.SourceFolder);
+        Assert.Empty(vm.Files);
+        Assert.Equal("Reading the folder…", vm.EmptyStateText);
+        Assert.Equal("", vm.FileCountText);
+        Assert.False(vm.MergeCommand.CanExecute(null));
+
+        gate.Set();
+        await selecting;
+
+        Assert.False(vm.IsLoadingFiles);
+        Assert.Single(vm.Files);
+        Assert.Equal("1 file", vm.FileCountText);
+        Assert.True(vm.MergeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task SelectFolder_WhileListing_DoesNotSaveTheFolderUntilItIsListed()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var gate = _finder.Hold(Folder);
+        var vm = CreateViewModel();
+
+        var selecting = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        Assert.Equal(0, _settings.UpdateCount);
+
+        gate.Set();
+        await selecting;
+
+        Assert.Equal(1, _settings.UpdateCount);
+    }
+
+    [Fact]
+    public async Task SelectFolder_ANewerChoiceWins_AndTheSlowOldListingIsIgnored()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(Folder, "slow.pdf");
+        _finder.AddFolder(other, "fast.pdf");
+        var gate = _finder.Hold(Folder);
+        var vm = CreateViewModel();
+
+        var slow = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(other);
+        gate.Set();
+        await slow;
+
+        Assert.Equal(other, vm.SourceFolder);
+        Assert.Equal(["fast.pdf"], vm.Files.Select(f => f.Name));
+        Assert.False(vm.IsLoadingFiles);
+        Assert.Equal(other, _settings.Current.LastMergeFolder);
+        Assert.Equal(1, _settings.UpdateCount);
+    }
+
+    [Fact]
+    public async Task SelectFolder_ANewerChoiceWins_EvenWhenTheOldListingFailsLater()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(other, "fast.pdf");
+        var gate = _finder.Hold(Folder); // not registered, so it fails once released
+        var vm = CreateViewModel();
+
+        var slow = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(other);
+        gate.Set();
+        await slow;
+
+        Assert.False(vm.HasError);
+        Assert.Equal(["fast.pdf"], vm.Files.Select(f => f.Name));
+    }
+
+    [Fact]
+    public async Task SelectFolder_TheSlowListingFails_ShowsTheErrorAndStopsLoading()
+    {
+        var gate = _finder.Hold(Folder); // not registered, so it fails once released
+        var vm = CreateViewModel();
+
+        var selecting = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        gate.Set();
+        await selecting;
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.IsLoadingFiles);
+        Assert.Equal("The PDF files in this folder could not be listed.", vm.EmptyStateText);
+    }
+
+    [Fact]
+    public async Task SelectFolder_AnUnexpectedFailure_IsNotHidden_ButNeverLeavesLoadingStuck()
+    {
+        _finder.Fail(Folder, new NullReferenceException("a bug"));
+        var vm = CreateViewModel();
+
+        await Assert.ThrowsAsync<NullReferenceException>(() => vm.SelectFolderCommand.ExecuteAsync(Folder));
+
+        Assert.False(vm.IsLoadingFiles);
+    }
+
+    [Fact]
+    public async Task Browse_WhileAnotherFolderIsStillListing_IsAllowed()
+    {
+        _finder.AddFolder(Folder, "slow.pdf");
+        var gate = _finder.Hold(Folder);
+        var vm = CreateViewModel();
+        var slow = vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        Assert.True(vm.BrowseCommand.CanExecute(null));
+        Assert.True(vm.SelectFolderCommand.CanExecute(Folder));
+
+        gate.Set();
+        await slow;
+    }
+
+    [Fact]
+    public async Task Browse_PickedFolder_IsSelected()
     {
         _finder.AddFolder(Folder, "a.pdf");
         _picker.Result = Folder;
         var vm = CreateViewModel();
 
-        vm.BrowseCommand.Execute(null);
+        await vm.BrowseCommand.ExecuteAsync(null);
 
         Assert.Equal(Folder, vm.SourceFolder);
         Assert.Single(vm.Files);
     }
 
     [Fact]
-    public void Browse_Cancelled_KeepsCurrentFolderAndOffersItToThePicker()
+    public async Task Browse_Cancelled_KeepsCurrentFolderAndOffersItToThePicker()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         _picker.Result = null;
 
-        vm.BrowseCommand.Execute(null);
+        await vm.BrowseCommand.ExecuteAsync(null);
 
         Assert.Equal(Folder, vm.SourceFolder);
         Assert.Equal(Folder, _picker.LastInitialFolder);
@@ -174,7 +418,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf", "b.pdf");
         _merger.Result = new MergeResult { OutputFilePath = Path.Combine(Folder, "out.pdf"), FilesMerged = 2, TotalPages = 5 };
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         await vm.MergeCommand.ExecuteAsync(null);
 
@@ -191,7 +435,7 @@ public class MergeViewModelTests
     {
         _finder.AddFolder(Folder, "b.pdf", "a.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         // The folder changes after the preview; the merge must still use the preview.
         _finder.AddFolder(Folder, "a.pdf", "b.pdf", "surprise.pdf");
@@ -210,7 +454,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Result = new MergeResult { OutputFilePath = "x.pdf", FilesMerged = 1, TotalPages = 1 };
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         await vm.MergeCommand.ExecuteAsync(null);
 
@@ -223,7 +467,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         var running = vm.MergeCommand.ExecuteAsync(null);
 
@@ -245,7 +489,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Exception = new PdfUnreadableException(@"C:\docs\Invoices\a.pdf", new InvalidOperationException("bad header"));
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         await vm.MergeCommand.ExecuteAsync(null);
 
@@ -260,7 +504,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Exception = new NullReferenceException("a bug");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         await Assert.ThrowsAsync<NullReferenceException>(() => vm.MergeCommand.ExecuteAsync(null));
 
@@ -274,7 +518,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Exception = new NoPdfFilesException(Folder);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
 
         _merger.Exception = null;
@@ -290,10 +534,10 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _finder.AddFolder(@"C:\docs\Other", "b.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
 
-        vm.SelectFolderCommand.Execute(@"C:\docs\Other");
+        await vm.SelectFolderCommand.ExecuteAsync(@"C:\docs\Other");
 
         Assert.Null(vm.Result);
         Assert.False(vm.HasResult);
@@ -304,7 +548,7 @@ public class MergeViewModelTests
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
 
         vm.Result!.OpenCommand.Execute(null);
@@ -320,7 +564,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf", "b.pdf", "c.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         var running = vm.MergeCommand.ExecuteAsync(null);
 
@@ -340,7 +584,7 @@ public class MergeViewModelTests
         _merger.ProgressToReport.Add(new MergeProgress(2, 3, "b.pdf"));
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         var running = vm.MergeCommand.ExecuteAsync(null);
         Assert.True(_merger.Reported.Wait(TimeSpan.FromSeconds(5)));
@@ -361,7 +605,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         Assert.False(vm.CancelCommand.CanExecute(null));
 
         var running = vm.MergeCommand.ExecuteAsync(null);
@@ -378,7 +622,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         var running = vm.MergeCommand.ExecuteAsync(null);
         vm.CancelCommand.Execute(null);
@@ -396,7 +640,7 @@ public class MergeViewModelTests
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
         await vm.MergeCommand.ExecuteAsync(null);
 
@@ -409,7 +653,7 @@ public class MergeViewModelTests
         _finder.AddFolder(Folder, "a.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         var first = vm.MergeCommand.ExecuteAsync(null);
         vm.CancelCommand.Execute(null);
         await first;
@@ -428,12 +672,12 @@ public class MergeViewModelTests
         _finder.AddFolder(@"C:\docs\Other", "b.pdf");
         _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
-        vm.SelectFolderCommand.Execute(Folder);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
         var running = vm.MergeCommand.ExecuteAsync(null);
         vm.CancelCommand.Execute(null);
         await running;
 
-        vm.SelectFolderCommand.Execute(@"C:\docs\Other");
+        await vm.SelectFolderCommand.ExecuteAsync(@"C:\docs\Other");
 
         Assert.False(vm.HasNotice);
     }
