@@ -33,7 +33,7 @@ The PDF version of the output is set to match the last-processed input file's ve
 ## Docs
 
 - [Development workflow](docs/agentic-workflow.md) — branch, plan, implement, review, PR cycle
-- Requirements: `docs/requirements.md` (not yet created)
-- Architecture decisions: `docs/adr/` (not yet created)
-- Architecture overview: `docs/architecture.md` (not yet created)
-- Plans: `docs/plans/` (one file per feature/fix)
+- [Requirements](docs/requirements.md) — goals, operations, non-goals
+- [Architecture](docs/architecture.md) — solution structure, layer responsibilities, naming conventions
+- [ADRs](docs/adr/) — one file per significant decision
+- Plans: `docs/plans/` — one file per feature/fix, created before implementation
