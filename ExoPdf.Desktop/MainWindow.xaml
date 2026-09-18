@@ -11,21 +11,27 @@
         <!-- Sidebar -->
         <Border Grid.Column="0" Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
-            <DockPanel Margin="8,16">
-                <TextBlock DockPanel.Dock="Top" Text="ExoPdf" FontSize="18" FontWeight="SemiBold"
+            <!-- Rows in reading order (title, operations, footer) so keyboard order matches what is seen.
+                 Tab treats the sidebar as one stop; the arrow keys move between entries. -->
+            <Grid Margin="8,16" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="ExoPdf" FontSize="18" FontWeight="SemiBold"
                            Margin="12,0,12,16"
                            Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
-                <ListBox DockPanel.Dock="Bottom" Style="{StaticResource NavList}"
-                         ItemsSource="{Binding FooterPages}"
-                         SelectedItem="{Binding SelectedFooterPage}"
-                         AutomationProperties.Name="Settings navigation" />
+                <ItemsControl Grid.Row="1" Style="{StaticResource NavList}"
+                              ItemsSource="{Binding Pages}"
+                              AutomationProperties.Name="Operations navigation" />
 
-                <ListBox Style="{StaticResource NavList}"
-                         ItemsSource="{Binding Pages}"
-                         SelectedItem="{Binding SelectedPage}"
-                         AutomationProperties.Name="Operations navigation" />
-            </DockPanel>
+                <ItemsControl Grid.Row="2" Style="{StaticResource NavList}"
+                              ItemsSource="{Binding FooterPages}"
+                              AutomationProperties.Name="Settings navigation" />
+            </Grid>
         </Border>
 
         <!-- Page content. The View is chosen by the DataTemplate registered for the ViewModel type. -->

@@ -30,4 +30,16 @@ public abstract class PageViewModel : ObservableObject
     public string IconGlyph { get; }
 
     public NavigationPlacement Placement { get; }
+
+    /// <summary>
+    /// Whether this is the page being shown. Bound two-way to the sidebar entry;
+    /// <see cref="MainViewModel"/> keeps exactly one page selected.
+    /// </summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
+
+    private bool _isSelected;
 }

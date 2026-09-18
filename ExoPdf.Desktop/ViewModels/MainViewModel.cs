@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ExoPdf.Desktop.ViewModels;
@@ -7,63 +8,42 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private PageViewModel _currentPage;
 
-    [ObservableProperty]
-    private PageViewModel? _selectedPage;
-
-    [ObservableProperty]
-    private PageViewModel? _selectedFooterPage;
-
     public MainViewModel(IEnumerable<PageViewModel> pages)
     {
         var all = pages.ToList();
         Pages = all.Where(p => p.Placement == NavigationPlacement.Main).ToList();
         FooterPages = all.Where(p => p.Placement == NavigationPlacement.Footer).ToList();
 
-        _currentPage = all.FirstOrDefault()
+        _currentPage = Pages.FirstOrDefault() ?? FooterPages.FirstOrDefault()
             ?? throw new ArgumentException("At least one page must be registered.", nameof(pages));
-        SelectedPage = Pages.FirstOrDefault();
-        SelectedFooterPage = SelectedPage is null ? FooterPages.FirstOrDefault() : null;
+        _currentPage.IsSelected = true;
+
+        foreach (var page in all)
+            page.PropertyChanged += OnPagePropertyChanged;
     }
 
     public IReadOnlyList<PageViewModel> Pages { get; }
 
     public IReadOnlyList<PageViewModel> FooterPages { get; }
 
-    // The two sidebar lists share one selection: choosing in one clears the other.
-    // A null value is either the other list being cleared (ignored) or the user
-    // deselecting the current entry with Ctrl+click, in which case it is restored
-    // so the sidebar always agrees with the page shown.
-    partial void OnSelectedPageChanged(PageViewModel? value)
+    // CurrentPage is the single source of truth; each page's IsSelected follows it.
+    partial void OnCurrentPageChanged(PageViewModel? oldValue, PageViewModel newValue)
     {
-        if (value is null)
-        {
-            if (SelectedFooterPage is null)
-                RestoreSelection();
-            return;
-        }
+        if (oldValue is not null)
+            oldValue.IsSelected = false;
 
-        SelectedFooterPage = null;
-        CurrentPage = value;
+        newValue.IsSelected = true;
     }
 
-    partial void OnSelectedFooterPageChanged(PageViewModel? value)
+    // The sidebar writes IsSelected when the user picks an entry (by mouse or arrow keys).
+    private void OnPagePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (value is null)
-        {
-            if (SelectedPage is null)
-                RestoreSelection();
+        if (e.PropertyName != nameof(PageViewModel.IsSelected) || sender is not PageViewModel page)
             return;
-        }
 
-        SelectedPage = null;
-        CurrentPage = value;
-    }
-
-    private void RestoreSelection()
-    {
-        if (Pages.Contains(CurrentPage))
-            SelectedPage = CurrentPage;
-        else
-            SelectedFooterPage = CurrentPage;
+        if (page.IsSelected)
+            CurrentPage = page;
+        else if (page == CurrentPage)
+            page.IsSelected = true; // the page being shown cannot be deselected
     }
 }
