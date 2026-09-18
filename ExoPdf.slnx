@@ -2,4 +2,5 @@
   <Project Path="ExoPdf.Cli/ExoPdf.Cli.csproj" />
   <Project Path="ExoPdf.Core/ExoPdf.Core.csproj" />
   <Project Path="ExoPdf.Desktop/ExoPdf.Desktop.csproj" />
+  <Project Path="ExoPdf.Tests/ExoPdf.Tests.csproj" />
 </Solution>
