@@ -21,19 +21,22 @@ public static class MergeCommand
         command.SetAction(parseResult =>
         {
             var folder = parseResult.GetValue(folderArgument)!;
+            var output = parseResult.InvocationConfiguration.Output;
+            var error = parseResult.InvocationConfiguration.Error;
+
             try
             {
                 var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName });
 
-                Console.WriteLine($"Merged {result.FilesMerged} files ({result.TotalPages} pages)");
-                Console.WriteLine($"Output: {result.OutputFilePath}");
+                output.WriteLine($"Merged {result.FilesMerged} files ({result.TotalPages} pages)");
+                output.WriteLine($"Output: {result.OutputFilePath}");
                 return 0;
             }
             catch (Exception ex)
             {
                 // Same policy as the Desktop frontend: any failure (missing folder,
                 // corrupt or locked PDF, no write access) is a message and exit code 1.
-                Console.Error.WriteLine(ex.Message);
+                error.WriteLine(ex.Message);
                 return 1;
             }
         });

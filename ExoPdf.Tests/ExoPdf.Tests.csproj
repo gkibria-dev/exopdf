@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ExoPdf.Core\ExoPdf.Core.csproj" />
     <ProjectReference Include="..\ExoPdf.Desktop\ExoPdf.Desktop.csproj" />
+    <ProjectReference Include="..\ExoPdf.Cli\ExoPdf.Cli.csproj" />
   </ItemGroup>
 
 </Project>

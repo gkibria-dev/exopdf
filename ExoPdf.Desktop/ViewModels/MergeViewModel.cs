@@ -47,9 +47,7 @@ public partial class MergeViewModel : PageViewModel
         _shell = shell;
         _settings = settings;
 
-        var lastFolder = settings.Current.LastMergeFolder;
-        if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
-            SourceFolder = lastFolder;
+        RestoreLastFolder();
     }
 
     /// <summary>The PDFs that will be merged, in merge order.</summary>
@@ -98,7 +96,8 @@ public partial class MergeViewModel : PageViewModel
         else
             SourceFolder = path;
 
-        if (Directory.Exists(path))
+        // Only a folder that could be listed is worth offering again next time.
+        if (!HasError)
         {
             _settings.Current.LastMergeFolder = path;
             _settings.Save();
@@ -156,6 +155,18 @@ public partial class MergeViewModel : PageViewModel
         {
             ErrorMessage = ex.Message;
         }
+    }
+
+    /// <summary>Offers the last used folder again, silently dropping it if it can no longer be listed.</summary>
+    private void RestoreLastFolder()
+    {
+        var lastFolder = _settings.Current.LastMergeFolder;
+        if (string.IsNullOrEmpty(lastFolder))
+            return;
+
+        SourceFolder = lastFolder;
+        if (HasError)
+            SourceFolder = null;
     }
 
     private void ReloadFolder()
