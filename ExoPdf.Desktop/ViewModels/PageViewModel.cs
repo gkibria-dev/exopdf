@@ -1,0 +1,33 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace ExoPdf.Desktop.ViewModels;
+
+public enum NavigationPlacement
+{
+    /// <summary>Listed with the operations at the top of the sidebar.</summary>
+    Main,
+
+    /// <summary>Pinned to the bottom of the sidebar.</summary>
+    Footer
+}
+
+/// <summary>
+/// A page the user can navigate to from the sidebar. Every PDF operation, and
+/// Settings, derives from this and is registered with the DI container.
+/// </summary>
+public abstract class PageViewModel : ObservableObject
+{
+    protected PageViewModel(string title, string iconGlyph, NavigationPlacement placement = NavigationPlacement.Main)
+    {
+        Title = title;
+        IconGlyph = iconGlyph;
+        Placement = placement;
+    }
+
+    public string Title { get; }
+
+    /// <summary>A code point from Segoe Fluent Icons / Segoe MDL2 Assets.</summary>
+    public string IconGlyph { get; }
+
+    public NavigationPlacement Placement { get; }
+}

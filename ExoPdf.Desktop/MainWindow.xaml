@@ -1,12 +1,36 @@
-﻿<Window x:Class="ExoPdf.Desktop.MainWindow"
+<Window x:Class="ExoPdf.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:ExoPdf.Desktop"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="ExoPdf" Height="640" Width="960" MinHeight="480" MinWidth="720">
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="8,16">
+                <TextBlock DockPanel.Dock="Top" Text="ExoPdf" FontSize="18" FontWeight="SemiBold"
+                           Margin="12,0,12,16"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+                <ListBox DockPanel.Dock="Bottom" Style="{StaticResource NavList}"
+                         ItemsSource="{Binding FooterPages}"
+                         SelectedItem="{Binding SelectedFooterPage}"
+                         AutomationProperties.Name="Settings navigation" />
+
+                <ListBox Style="{StaticResource NavList}"
+                         ItemsSource="{Binding Pages}"
+                         SelectedItem="{Binding SelectedPage}"
+                         AutomationProperties.Name="Operations navigation" />
+            </DockPanel>
+        </Border>
+
+        <!-- Page content. The View is chosen by the DataTemplate registered for the ViewModel type. -->
+        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}"
+                        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                        IsTabStop="False" />
     </Grid>
 </Window>

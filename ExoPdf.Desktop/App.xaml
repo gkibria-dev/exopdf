@@ -1,9 +1,21 @@
-﻿<Application x:Class="ExoPdf.Desktop.App"
+<Application x:Class="ExoPdf.Desktop.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:ExoPdf.Desktop"
-             StartupUri="MainWindow.xaml">
+             xmlns:vm="clr-namespace:ExoPdf.Desktop.ViewModels"
+             xmlns:views="clr-namespace:ExoPdf.Desktop.Views">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Views/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Maps each page ViewModel to its View. Add one line per new operation. -->
+            <DataTemplate DataType="{x:Type vm:MergeViewModel}">
+                <views:MergeView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
+            </DataTemplate>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
