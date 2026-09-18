@@ -1,12 +1,14 @@
 using System.CommandLine;
+using ExoPdf.Core.Errors;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
-using ExoPdf.Core.Operations;
 
 namespace ExoPdf.Cli.Commands;
 
 public static class MergeCommand
 {
-    public static Command Build()
+    /// <param name="cancellationToken">Cancelled on Ctrl+C, so an interrupted merge leaves no partial file.</param>
+    public static Command Build(IPdfMerger merger, CancellationToken cancellationToken = default)
     {
         var folderArgument = new Argument<DirectoryInfo>("folder")
         {
@@ -21,11 +23,29 @@ public static class MergeCommand
         command.SetAction(parseResult =>
         {
             var folder = parseResult.GetValue(folderArgument)!;
-            var merger = new PdfMerger();
-            var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName });
+            var output = parseResult.InvocationConfiguration.Output;
+            var error = parseResult.InvocationConfiguration.Error;
 
-            Console.WriteLine($"Merged {result.FilesMerged} files ({result.TotalPages} pages)");
-            Console.WriteLine($"Output: {result.OutputFilePath}");
+            try
+            {
+                var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName }, null, cancellationToken);
+
+                output.WriteLine($"Merged {result.FilesMerged} files ({result.TotalPages} pages)");
+                output.WriteLine($"Output: {result.OutputFilePath}");
+                return 0;
+            }
+            catch (OperationCanceledException)
+            {
+                error.WriteLine("Merge cancelled.");
+                return CliApp.CancelledExitCode;
+            }
+            catch (ExoPdfException ex)
+            {
+                // An expected failure (missing folder, unreadable PDF, ...): show the
+                // message. Anything else is a bug and is left to CliApp.
+                error.WriteLine(ex.Message);
+                return 1;
+            }
         });
 
         return command;

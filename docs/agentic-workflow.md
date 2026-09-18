@@ -53,6 +53,23 @@ operation identical in structure to existing ones): no ADR is needed. Only write
 an ADR when a future developer or agent would reasonably question *why* a
 particular choice was made.
 
+### Changing requirements mid-flight
+
+Requirements evolve while work is in progress. Keep them traceable:
+
+- Every requirement has a stable ID (for example `DUI-17`). IDs are never
+  reused or renumbered.
+- A requirement that is dropped is marked **Withdrawn**, not deleted, so plans,
+  tests and PRs that cite it stay valid.
+- Commit each logical requirements change on its own, with a message that names
+  the IDs, for example `docs: DUI-17 promote reordering from Later to Should`.
+- Review the rendered Markdown (editor preview or the pull request). Use
+  `git log -p docs/requirements.md` to see how a requirement changed over time.
+- If `docs/requirements.md` changes after a plan is approved, run
+  `git diff <requirements-commit> -- docs/requirements.md` using the commit
+  recorded in the plan, update the plan, and get it approved again before
+  continuing.
+
 ---
 
 ## Step 3 — Create and approve a plan
@@ -77,7 +94,8 @@ tests, commit messages, or ADRs. Without the plan, that reasoning is lost.
 
 **Date:** YYYY-MM-DD
 **Branch:** <branch name>
-**Related requirements:** <section in requirements.md>
+**Related requirements:** <requirement IDs or section in requirements.md>
+**Requirements commit:** <short hash of the last commit to docs/requirements.md>
 
 ## Goal
 One sentence: what this plan achieves.

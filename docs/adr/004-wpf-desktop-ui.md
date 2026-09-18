@@ -32,7 +32,7 @@ For the MVVM layer:
 Use **WPF** with **CommunityToolkit.Mvvm**.
 
 WPF is the lowest-friction choice for a Windows desktop tool: mature, stable,
-well-understood, and fully supported in .NET 8+. CommunityToolkit.Mvvm provides
+well-understood, and fully supported in .NET 10. CommunityToolkit.Mvvm provides
 `[ObservableProperty]`, `[RelayCommand]`, and `ObservableObject` via source
 generators — eliminating boilerplate without adding complexity.
 

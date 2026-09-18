@@ -1,83 +1,155 @@
+using System.IO.Abstractions;
+using ExoPdf.Core.Errors;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
 namespace ExoPdf.Core.Operations;
 
-public class PdfMerger
+public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder, MergeOutputNamer namer) : IPdfMerger
 {
-    public MergeResult Merge(MergeOptions options)
+    public MergeResult Merge(
+        MergeOptions options,
+        IProgress<MergeProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        var files = Directory.GetFiles(options.SourceFolderPath, "*.pdf");
-        var outputFilePath = Path.Combine(
-            options.SourceFolderPath,
-            $"Merge_{Path.GetFileName(options.SourceFolderPath)}_{DateTime.Now:yyyyMMddHHmmss}.pdf");
+        var files = ResolveFiles(options);
+        if (files.Count == 0)
+            throw new NoPdfFilesException(options.SourceFolderPath);
 
-        using PdfDocument output = new();
-        int pageOffset = 0;
+        var outputFilePath = namer.CreateOutputPath(options.SourceFolderPath);
+        var tempFilePath = outputFilePath + ".tmp";
 
-        foreach (var file in files)
-            pageOffset += MergeFile(output, file, pageOffset);
-
-        output.Save(outputFilePath);
-
-        return new MergeResult
+        try
         {
-            OutputFilePath = outputFilePath,
-            FilesMerged = files.Length,
-            TotalPages = pageOffset
-        };
+            int totalPages = 0;
+
+            using (PdfDocument output = new())
+            {
+                for (int i = 0; i < files.Count; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    totalPages += MergeFile(output, files[i], totalPages);
+                    progress?.Report(new MergeProgress(i + 1, files.Count, fileSystem.Path.GetFileName(files[i])));
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                Write(output, tempFilePath, outputFilePath, options.SourceFolderPath);
+            }
+
+            return new MergeResult
+            {
+                OutputFilePath = outputFilePath,
+                FilesMerged = files.Count,
+                TotalPages = totalPages
+            };
+        }
+        catch
+        {
+            TryDelete(tempFilePath);
+            throw;
+        }
     }
 
-    private static int MergeFile(PdfDocument output, string filePath, int pageOffset)
+    /// <summary>Best-effort cleanup: failing to delete must not hide the error that got us here.</summary>
+    private void TryDelete(string path)
     {
-        using var input = PdfReader.Open(filePath, PdfDocumentOpenMode.Import);
+        try
+        {
+            if (fileSystem.File.Exists(path))
+                fileSystem.File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private IReadOnlyList<string> ResolveFiles(MergeOptions options)
+    {
+        if (options.Files is null)
+            return finder.Find(options.SourceFolderPath);
+
+        // The finder checks the folder when it scans it; with an explicit list the
+        // folder is only the output location, so check it here.
+        if (!fileSystem.Directory.Exists(options.SourceFolderPath))
+            throw new SourceFolderNotFoundException(options.SourceFolderPath);
+
+        return options.Files;
+    }
+
+    /// <summary>Saves to a temporary file, then moves it into place, so only a complete file is ever published.</summary>
+    private void Write(PdfDocument output, string tempFilePath, string outputFilePath, string folderPath)
+    {
+        try
+        {
+            using (var stream = fileSystem.File.Create(tempFilePath))
+                output.Save(stream, closeStream: false);
+
+            fileSystem.File.Move(tempFilePath, outputFilePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new OutputWriteException(folderPath, ex);
+        }
+    }
+
+    private int MergeFile(PdfDocument output, string filePath, int pageOffset)
+    {
+        using var stream = ReadingFile(filePath, () => fileSystem.File.OpenRead(filePath));
+        using var input = ReadingFile(filePath, () => OpenPdf(stream));
+
         output.Version = input.Version;
+        ReadingFile(filePath, () =>
+        {
+            foreach (PdfPage page in input.Pages)
+                output.AddPage(page);
+        });
 
-        var pageIndexMap = BuildPageIndexMap(input);
-
-        foreach (PdfPage page in input.Pages)
-            output.AddPage(page);
-
+        // From here on it is our own code working on a file that read fine; a failure
+        // here is a bug and is deliberately not reported as an unreadable file.
         var fileBookmark = output.Outlines.Add(
-            Path.GetFileNameWithoutExtension(filePath),
+            fileSystem.Path.GetFileNameWithoutExtension(filePath),
             output.Pages[pageOffset]);
 
-        if (input.Outlines.Count > 0)
-            CopyOutlines(input.Outlines, fileBookmark.Outlines, output, pageIndexMap, pageOffset);
+        OutlineCopier.Copy(input, fileBookmark.Outlines, output, pageOffset);
 
         return input.PageCount;
     }
 
-    private static Dictionary<PdfPage, int> BuildPageIndexMap(PdfDocument input)
+    private static PdfDocument OpenPdf(Stream stream)
     {
-        var map = new Dictionary<PdfPage, int>();
-        for (int i = 0; i < input.PageCount; i++)
-            map[input.Pages[i]] = i;
-        return map;
+        var document = PdfReader.Open(stream, PdfDocumentOpenMode.Import);
+        if (document.PageCount == 0)
+        {
+            document.Dispose();
+            throw new InvalidOperationException("The file contains no pages.");
+        }
+
+        return document;
     }
 
-    private static void CopyOutlines(
-        PdfOutlineCollection source,
-        PdfOutlineCollection target,
-        PdfDocument output,
-        Dictionary<PdfPage, int> pageIndexMap,
-        int pageOffset)
+    /// <summary>
+    /// Runs a step that reads the source file. Whatever fails while reading (corrupt,
+    /// encrypted, locked, gone) is reported as that file being unreadable.
+    /// </summary>
+    private static T ReadingFile<T>(string filePath, Func<T> read)
     {
-        foreach (PdfOutline outline in source)
+        try
         {
-            if (outline.DestinationPage == null || !pageIndexMap.TryGetValue(outline.DestinationPage, out int inputPageIndex))
-                continue;
-
-            int outputPageIndex = pageOffset + inputPageIndex;
-            if (outputPageIndex >= output.PageCount)
-                continue;
-
-            var child = target.Add(outline.Title, output.Pages[outputPageIndex]);
-            child.PageDestinationType = outline.PageDestinationType;
-
-            if (outline.Outlines.Count > 0)
-                CopyOutlines(outline.Outlines, child.Outlines, output, pageIndexMap, pageOffset);
+            return read();
+        }
+        catch (Exception ex) when (ex is not ExoPdfException and not OperationCanceledException)
+        {
+            throw new PdfUnreadableException(filePath, ex);
         }
     }
+
+    private static void ReadingFile(string filePath, Action read) =>
+        ReadingFile(filePath, () =>
+        {
+            read();
+            return 0;
+        });
 }
