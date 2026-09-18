@@ -134,7 +134,7 @@ WPF types and depend on Core interfaces and on the interfaces in `Services/`.
 ```
 ExoPdf.Desktop/
 ├── App.xaml(.cs)          composition root: DI container, theme, startup,
-│                          unexpected-error dialog
+│                          start-up work, unexpected-error dialog
 ├── MainWindow.xaml        shell: sidebar + content area
 ├── ViewModels/
 │   ├── PageViewModel.cs   base for every navigable page
@@ -151,7 +151,10 @@ ExoPdf.Desktop/
 ├── Services/              interfaces free of WPF types, plus implementations
 │   ├── IFolderPicker      folder dialog
 │   ├── IShellLauncher     open a file, show it in Explorer (throws ShellLaunchException)
-│   ├── IThemeService      applies light/dark/system (only place using ThemeMode)
+│   ├── IThemeService      applies light/dark/system to the window and its title bar
+│   │                      (ThemeService: the only place using ThemeMode and DWM)
+│   ├── TitleBarTheme      whether the title bar is dark for a theme (pure, tested)
+│   ├── DwmTitleBar        internal: the native call that darkens a title bar
 │   ├── ISettingsStore     load and save the settings document (JsonSettingsStore)
 │   └── ISettingsService   current settings; Update(s => s with { ... }) saves them
 ├── Models/AppSettings.cs  immutable record
@@ -168,7 +171,17 @@ only a selection changes the page. The content area shows the current page;
 the View is chosen by the `DataTemplate` that maps the ViewModel type to its View
 in `App.xaml`. The sidebar is one Tab stop and the arrow keys move between entries.
 
-**Merge view.** Selecting a folder lists the files through `IMergeSourceFinder`.
+**Start-up.** `App.OnStartup` builds the container, applies the theme, shows the
+window, and only then awaits `MainViewModel.InitializeAsync()`, which calls each page's
+`InitializeAsync()`. Work that may be slow, such as listing the last folder, belongs
+there so it cannot delay the window. `OnStartup` is `async void`; a failure after the
+await reaches `App.DispatcherUnhandledException`.
+
+**Merge view.** Selecting a folder lists the files through `IMergeSourceFinder` on a
+background thread, showing "Reading the folder…" meanwhile. Each listing takes a
+version number and a listing that finishes after a newer one has started is ignored,
+so the newest choice wins. (The file-system call cannot be cancelled; it is
+abandoned.) A folder is remembered only after it was listed successfully.
 The merge is given exactly that list (`MergeOptions.Files`), so it merges what the
 user was shown. Merging runs on a background thread with a `Progress`/`CancellationToken`: the view
 shows "Merged n of N", a determinate bar and a Cancel button. Cancelling shows a
@@ -182,8 +195,10 @@ neutral notice, not an error. A successful merge produces a `MergeResultViewMode
 unknown or corrupt content falls back to defaults. `ISettingsService` loads lazily
 and saves on every change, so callers cannot forget to save.
 
-**Theme.** Built-in Fluent theme (`Application.ThemeMode`). See
-[ADR-005](adr/005-builtin-fluent-theme.md).
+**Theme.** Built-in Fluent theme (`Application.ThemeMode`). On Windows 10 it does not
+darken the native title bar, so `ThemeService` also sets the DWM dark-mode attribute
+on every window and repaints the title bar. With "Use system setting" it re-applies
+when Windows changes its app mode. See [ADR-005](adr/005-builtin-fluent-theme.md).
 
 **Packages:** WPF (inbox), `CommunityToolkit.Mvvm`,
 `Microsoft.Extensions.DependencyInjection`, `System.IO.Abstractions`.

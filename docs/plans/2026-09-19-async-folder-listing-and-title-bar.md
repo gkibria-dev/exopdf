@@ -1,7 +1,7 @@
 # Plan: Asynchronous folder listing and a themed title bar
 
 **Date:** 2026-09-19
-**Branch:** fix/async-folder-listing-and-title-bar (stacked on `feature/desktop-ui`, PR #1)
+**Branch:** fix/async-folder-listing-and-title-bar (based on `main` after PR #1 was merged)
 **Related requirements:** DUI-25, DUI-4, DUI-N3
 **Requirements commit:** f52baf1
 **Related ADR:** [ADR-005](../adr/005-builtin-fluent-theme.md) (addendum in step 5)
@@ -112,3 +112,48 @@ Each step is one commit; the solution builds and tests pass after each.
 - Custom window chrome.
 - An asynchronous Core API.
 - Showing more than the file list while loading (for example a file count estimate).
+
+## Outcome and deviations
+
+Measured before and after, on Windows 10 build 19045:
+
+| | Before | After |
+|---|---|---|
+| Time until the window appears with an unreachable last folder | 28 s | 1.4 s |
+| Title bar in dark theme | white | dark |
+
+Where the result differs from the plan:
+
+- **Steps 3 and 4 are one commit.** The `InitializeAsync` plumbing has no behaviour on
+  its own.
+- **A version number, not a `CancellationTokenSource`.** The blocking file-system call
+  cannot be cancelled, so a superseded listing is abandoned and its result ignored.
+  The listing commands allow concurrent executions so the user can pick again while a
+  slow folder is still being read.
+- **The title bar needed a repaint.** Setting `DWMWA_USE_IMMERSIVE_DARK_MODE`
+  succeeded but changed nothing on screen. Measured: only a `WM_NCACTIVATE` toggle
+  repaints the bar on this build; `RedrawWindow` and `SWP_FRAMECHANGED` do not.
+  `DwmTitleBar` toggles it and restores the window's real active state, and skips
+  the repaint when the value is already right.
+- **The plan's risk about live system-theme changes did not materialise.** On
+  Windows 10 both the title bar and the window contents follow a change of the
+  Windows app mode while the app runs on "Use system setting" (checked by changing
+  `AppsUseLightTheme` and broadcasting `WM_SETTINGCHANGE`; the value was restored).
+- **Not verified:** Windows 11, and the title bar attribute 19 fallback for Windows 10
+  builds before 2004.
+
+## Review round
+
+A code review of the finished branch (`/code-review`; `/security-review` found nothing)
+led to one more commit. Changed: `IsLoadingFiles` is reset in a `finally`; restoring
+the last folder no longer shows an error before dropping the folder (and a race that
+could wipe a newer listing's error is gone); the native window is created before
+`Show` so the dark title bar is in place before the window is visible; the repaint
+treats a window whose own dialog is in front as active; the theme class handler
+honours `Dispose`.
+
+Reviewed and left unchanged: each pick of an unreachable share starts one blocked
+thread-pool call that lives until the network timeout (about 27 s here). A guard
+against re-picking the same path would swallow an explicit pick during the start-up
+restore and lose its error, and the number of blocked calls is bounded by what the user
+does, so it is recorded as a known limit.
