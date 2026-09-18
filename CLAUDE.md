@@ -18,6 +18,9 @@ dotnet run --project ExoPdf.Cli\ExoPdf.Cli.csproj -- merge <folder>
 # Run Desktop
 dotnet run --project ExoPdf.Desktop\ExoPdf.Desktop.csproj
 
+# Run tests
+dotnet test ExoPdf.Tests\ExoPdf.Tests.csproj
+
 # Publish CLI self-contained executable
 dotnet publish ExoPdf.Cli\ExoPdf.Cli.csproj -c Release -r win-x64 --self-contained
 ```
