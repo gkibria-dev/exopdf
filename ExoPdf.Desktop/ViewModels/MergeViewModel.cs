@@ -2,15 +2,16 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
-using ExoPdf.Core.Operations;
 using ExoPdf.Desktop.Services;
 
 namespace ExoPdf.Desktop.ViewModels;
 
 public partial class MergeViewModel : PageViewModel
 {
-    private readonly PdfMerger _merger;
+    private readonly IPdfMerger _merger;
+    private readonly IMergeSourceFinder _finder;
     private readonly IFolderPicker _folderPicker;
     private readonly IShellLauncher _shell;
     private readonly ISettingsStore _settings;
@@ -37,10 +38,11 @@ public partial class MergeViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(EmptyStateText))]
     private string? _errorMessage;
 
-    public MergeViewModel(PdfMerger merger, IFolderPicker folderPicker, IShellLauncher shell, ISettingsStore settings)
+    public MergeViewModel(IPdfMerger merger, IMergeSourceFinder finder, IFolderPicker folderPicker, IShellLauncher shell, ISettingsStore settings)
         : base("Merge", "\uE8C8")
     {
         _merger = merger;
+        _finder = finder;
         _folderPicker = folderPicker;
         _shell = shell;
         _settings = settings;
@@ -171,7 +173,7 @@ public partial class MergeViewModel : PageViewModel
         {
             try
             {
-                foreach (var file in _merger.GetSourceFiles(SourceFolder!))
+                foreach (var file in _finder.Find(SourceFolder!))
                     Files.Add(new MergeFileItem(file));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

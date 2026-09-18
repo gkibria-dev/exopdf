@@ -1,12 +1,12 @@
 using System.CommandLine;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
-using ExoPdf.Core.Operations;
 
 namespace ExoPdf.Cli.Commands;
 
 public static class MergeCommand
 {
-    public static Command Build()
+    public static Command Build(IPdfMerger merger)
     {
         var folderArgument = new Argument<DirectoryInfo>("folder")
         {
@@ -21,8 +21,6 @@ public static class MergeCommand
         command.SetAction(parseResult =>
         {
             var folder = parseResult.GetValue(folderArgument)!;
-            var merger = new PdfMerger();
-
             try
             {
                 var result = merger.Merge(new MergeOptions { SourceFolderPath = folder.FullName });

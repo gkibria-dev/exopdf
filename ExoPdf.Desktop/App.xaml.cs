@@ -1,4 +1,6 @@
 using System.Windows;
+using System.IO.Abstractions;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Operations;
 using ExoPdf.Desktop.Services;
 using ExoPdf.Desktop.ViewModels;
@@ -34,7 +36,11 @@ public partial class App : Application
     {
         var services = new ServiceCollection();
 
-        services.AddSingleton<PdfMerger>();
+        services.AddSingleton<IFileSystem, FileSystem>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<MergeOutputNamer>();
+        services.AddSingleton<IMergeSourceFinder, MergeSourceFinder>();
+        services.AddSingleton<IPdfMerger, PdfMerger>();
         services.AddSingleton<IFolderPicker, FolderPicker>();
         services.AddSingleton<IShellLauncher, ShellLauncher>();
         services.AddSingleton<IThemeService, ThemeService>();

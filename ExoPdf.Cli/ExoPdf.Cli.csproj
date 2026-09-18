@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="3.0.0-rc.1.26425.128" />
+    <PackageReference Include="System.IO.Abstractions" Version="22.2.0" />
   </ItemGroup>
 
   <PropertyGroup>

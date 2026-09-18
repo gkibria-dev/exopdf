@@ -1,110 +1,68 @@
-using System.Text.RegularExpressions;
+using System.IO.Abstractions;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
 namespace ExoPdf.Core.Operations;
 
-public class PdfMerger
+public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder, MergeOutputNamer namer) : IPdfMerger
 {
-    /// <summary>
-    /// Returns the PDF files that <see cref="Merge"/> would combine, in merge order:
-    /// ascending file name, case-insensitive. Output files from previous merges of
-    /// the same folder are excluded.
-    /// </summary>
-    public IReadOnlyList<string> GetSourceFiles(string folderPath)
-    {
-        if (!Directory.Exists(folderPath))
-            throw new DirectoryNotFoundException($"Folder not found: {folderPath}");
-
-        var previousOutput = new Regex(
-            $"^Merge_{Regex.Escape(GetFolderName(folderPath))}_\\d{{14}}\\.pdf$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
-        return Directory.GetFiles(folderPath, "*.pdf")
-            .Where(file => !previousOutput.IsMatch(Path.GetFileName(file)))
-            .OrderBy(file => Path.GetFileName(file), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
     public MergeResult Merge(MergeOptions options)
     {
-        var files = GetSourceFiles(options.SourceFolderPath);
+        var files = finder.Find(options.SourceFolderPath);
         if (files.Count == 0)
             throw new InvalidOperationException($"No PDF files to merge in: {options.SourceFolderPath}");
 
-        var outputFilePath = Path.Combine(
-            options.SourceFolderPath,
-            $"Merge_{GetFolderName(options.SourceFolderPath)}_{DateTime.Now:yyyyMMddHHmmss}.pdf");
+        var outputFilePath = namer.CreateOutputPath(options.SourceFolderPath);
+        var tempFilePath = outputFilePath + ".tmp";
 
-        using PdfDocument output = new();
-        int pageOffset = 0;
-
-        foreach (var file in files)
-            pageOffset += MergeFile(output, file, pageOffset);
-
-        output.Save(outputFilePath);
-
-        return new MergeResult
+        try
         {
-            OutputFilePath = outputFilePath,
-            FilesMerged = files.Count,
-            TotalPages = pageOffset
-        };
+            int totalPages = 0;
+
+            using (PdfDocument output = new())
+            {
+                foreach (var file in files)
+                    totalPages += MergeFile(output, file, totalPages);
+
+                using var stream = fileSystem.File.Create(tempFilePath);
+                output.Save(stream, closeStream: false);
+            }
+
+            // Publish only a complete file: a failure above leaves no output behind.
+            fileSystem.File.Move(tempFilePath, outputFilePath);
+
+            return new MergeResult
+            {
+                OutputFilePath = outputFilePath,
+                FilesMerged = files.Count,
+                TotalPages = totalPages
+            };
+        }
+        catch
+        {
+            if (fileSystem.File.Exists(tempFilePath))
+                fileSystem.File.Delete(tempFilePath);
+            throw;
+        }
     }
 
-    private static string GetFolderName(string folderPath) =>
-        Path.GetFileName(Path.TrimEndingDirectorySeparator(folderPath));
-
-    private static int MergeFile(PdfDocument output, string filePath, int pageOffset)
+    private int MergeFile(PdfDocument output, string filePath, int pageOffset)
     {
-        using var input = PdfReader.Open(filePath, PdfDocumentOpenMode.Import);
+        using var stream = fileSystem.File.OpenRead(filePath);
+        using var input = PdfReader.Open(stream, PdfDocumentOpenMode.Import);
         output.Version = input.Version;
-
-        var pageIndexMap = BuildPageIndexMap(input);
 
         foreach (PdfPage page in input.Pages)
             output.AddPage(page);
 
         var fileBookmark = output.Outlines.Add(
-            Path.GetFileNameWithoutExtension(filePath),
+            fileSystem.Path.GetFileNameWithoutExtension(filePath),
             output.Pages[pageOffset]);
 
-        if (input.Outlines.Count > 0)
-            CopyOutlines(input.Outlines, fileBookmark.Outlines, output, pageIndexMap, pageOffset);
+        OutlineCopier.Copy(input, fileBookmark.Outlines, output, pageOffset);
 
         return input.PageCount;
-    }
-
-    private static Dictionary<PdfPage, int> BuildPageIndexMap(PdfDocument input)
-    {
-        var map = new Dictionary<PdfPage, int>();
-        for (int i = 0; i < input.PageCount; i++)
-            map[input.Pages[i]] = i;
-        return map;
-    }
-
-    private static void CopyOutlines(
-        PdfOutlineCollection source,
-        PdfOutlineCollection target,
-        PdfDocument output,
-        Dictionary<PdfPage, int> pageIndexMap,
-        int pageOffset)
-    {
-        foreach (PdfOutline outline in source)
-        {
-            if (outline.DestinationPage == null || !pageIndexMap.TryGetValue(outline.DestinationPage, out int inputPageIndex))
-                continue;
-
-            int outputPageIndex = pageOffset + inputPageIndex;
-            if (outputPageIndex >= output.PageCount)
-                continue;
-
-            var child = target.Add(outline.Title, output.Pages[outputPageIndex]);
-            child.PageDestinationType = outline.PageDestinationType;
-
-            if (outline.Outlines.Count > 0)
-                CopyOutlines(outline.Outlines, child.Outlines, output, pageIndexMap, pageOffset);
-        }
     }
 }

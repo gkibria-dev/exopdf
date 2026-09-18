@@ -1,3 +1,5 @@
+using System.IO.Abstractions;
+using ExoPdf.Core.Merging;
 using ExoPdf.Core.Operations;
 using ExoPdf.Desktop.ViewModels;
 
@@ -14,7 +16,13 @@ public class MergeViewModelTests : IDisposable
 
     public void Dispose() => Directory.Delete(_folder, recursive: true);
 
-    private MergeViewModel CreateViewModel() => new(new PdfMerger(), _picker, _shell, _settings);
+    private MergeViewModel CreateViewModel()
+    {
+        var fileSystem = new FileSystem();
+        var namer = new MergeOutputNamer(fileSystem, TimeProvider.System);
+        var finder = new MergeSourceFinder(fileSystem, namer);
+        return new MergeViewModel(new PdfMerger(fileSystem, finder, namer), finder, _picker, _shell, _settings);
+    }
 
     [Fact]
     public void NewViewModel_HasNoFolderAndCannotMerge()
