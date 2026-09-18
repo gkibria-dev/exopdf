@@ -1,3 +1,26 @@
-.vs
-obj
-bin
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
