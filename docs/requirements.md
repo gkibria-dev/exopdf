@@ -52,6 +52,17 @@ Merge all PDF files in a folder into a single output PDF.
   are skipped, so merging the same folder again does not include the previous
   result. This applies to every frontend.
 - If the source folder does not exist, the operation fails with a clear error
+- An existing file is never overwritten. If the output name is already taken
+  (for example two merges in the same second), the timestamp advances by one
+  second until the name is free.
+- The output is written completely or not at all. If the operation fails or is
+  cancelled, no output file, including a partial one, is left behind.
+- If a source file cannot be read as a PDF, the operation fails with a message that
+  names the file, and no output is created.
+- The operation reports progress (files completed out of total) and can be
+  cancelled between files.
+- The Core API accepts either a folder or an explicit ordered list of files to
+  merge. No frontend uses the list yet (see DUI-17 and DUI-18).
 - Each source file produces a top-level bookmark named after the file
   (without the `.pdf` extension), pointing to its first page in the merged output
 - If a source file contains bookmarks, they are copied as children under that
@@ -95,6 +106,7 @@ Priority: **Must** = required for the first release of the UI.
 | DUI-14 | Must | On success, the view shows the output file path with "Open file" and "Show in folder" actions. |
 | DUI-15 | Must | Errors (no PDFs, unreadable or locked file, folder not found) appear as a clear message in the view. The application does not crash. |
 | DUI-16 | Must | Merge behaviour, output naming and bookmarks are those defined under **Merge** above and come from `ExoPdf.Core`. The UI adds no PDF logic. |
+| DUI-19 | Should | While merging, the view shows progress (files completed of total) and a Cancel button. Cancelling leaves no output file and shows a neutral "Merge cancelled" message, not an error. |
 | DUI-17 | Later | The user reorders or deselects files before merging. |
 | DUI-18 | Later | The user adds individual files instead of, or in addition to, a folder. |
 
@@ -122,6 +134,7 @@ Settings belong to the Desktop frontend only. The CLI has no settings file.
 | DUI-N4 | Every action is reachable by keyboard. Controls have accessible names for screen readers. |
 | DUI-N5 | The layout scales correctly at 100%–200% display scaling. |
 | DUI-N6 | ViewModel logic is covered by unit tests in `ExoPdf.Tests`. |
+| DUI-N7 | An unexpected error is reported to the user in a dialog with a generic message. The application does not close silently. |
 
 ---
 
