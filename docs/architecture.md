@@ -1,17 +1,9 @@
 # Architecture
 
-## Current state
-
-A single .NET 8 console app project (`ExoPdf/`). All PDF logic and console I/O
-live in `Program.cs`. This is the starting point; the target structure below is
-the direction all new work moves toward.
-
----
-
-## Target structure
+## Solution structure
 
 ```
-ExoPdf.sln
+ExoPdf.slnx
 ├── ExoPdf.Core/          ← class library
 ├── ExoPdf.Cli/           ← console app
 └── ExoPdf.Desktop/       ← WPF app
