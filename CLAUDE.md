@@ -29,3 +29,11 @@ Single-file console app (`PdfUtil/Program.cs`):
 - Saves the merged result as `Merge_<FolderName>_<yyyyMMddHHmmss>.pdf` inside the same source folder
 
 The PDF version of the output is set to match the last-processed input file's version (each file overwrites `outputPDFDocument.Version`).
+
+## Docs
+
+- [Development workflow](docs/agentic-workflow.md) — branch, plan, implement, review, PR cycle
+- Requirements: `docs/requirements.md` (not yet created)
+- Architecture decisions: `docs/adr/` (not yet created)
+- Architecture overview: `docs/architecture.md` (not yet created)
+- Plans: `docs/plans/` (one file per feature/fix)
