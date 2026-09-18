@@ -12,7 +12,9 @@ public partial class App : Application
 {
     private ServiceProvider? _services;
 
-    protected override void OnStartup(StartupEventArgs e)
+    // async void because this is an event-style override. A failure after the await is
+    // rethrown on the UI thread and reaches OnUnhandledException below.
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
@@ -23,9 +25,14 @@ public partial class App : Application
         var settings = _services.GetRequiredService<ISettingsService>();
         _services.GetRequiredService<IThemeService>().Apply(settings.Current.Theme);
 
-        var window = new MainWindow { DataContext = _services.GetRequiredService<MainViewModel>() };
+        var mainViewModel = _services.GetRequiredService<MainViewModel>();
+        var window = new MainWindow { DataContext = mainViewModel };
         MainWindow = window;
         window.Show();
+
+        // Start-up work such as listing the last folder runs after the window is visible,
+        // so a slow disk or network share cannot delay it.
+        await mainViewModel.InitializeAsync();
     }
 
     // DUI-N7: an unexpected error is reported, not swallowed and not a silent exit.

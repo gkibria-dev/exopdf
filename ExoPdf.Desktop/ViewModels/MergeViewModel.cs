@@ -18,6 +18,11 @@ public partial class MergeViewModel : PageViewModel
 
     private CancellationTokenSource? _cancellation;
 
+    // Each folder listing takes the next number. A listing that finishes after a newer
+    // one has started is stale and its result is ignored (the file-system call itself
+    // cannot be cancelled, only abandoned).
+    private int _listingVersion;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasFolder))]
     [NotifyPropertyChangedFor(nameof(EmptyStateText))]
@@ -30,6 +35,13 @@ public partial class MergeViewModel : PageViewModel
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyPropertyChangedFor(nameof(CanChangeFolder))]
     private bool _isBusy;
+
+    /// <summary>True while the files of the selected folder are being listed.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(MergeCommand))]
+    [NotifyPropertyChangedFor(nameof(EmptyStateText))]
+    [NotifyPropertyChangedFor(nameof(FileCountText))]
+    private bool _isLoadingFiles;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasResult))]
@@ -61,8 +73,27 @@ public partial class MergeViewModel : PageViewModel
         _folderPicker = folderPicker;
         _shell = shell;
         _settings = settings;
+    }
 
-        RestoreLastFolder();
+    /// <summary>
+    /// Offers the last used folder again. Runs after the window is shown, so a slow
+    /// folder cannot delay startup.
+    /// </summary>
+    public override async Task InitializeAsync()
+    {
+        var lastFolder = _settings.Current.LastMergeFolder;
+        if (string.IsNullOrEmpty(lastFolder))
+            return;
+
+        await LoadFolderAsync(lastFolder);
+
+        // A folder that can no longer be listed is dropped without an error. If the user
+        // has chosen something else in the meantime, leave their choice alone.
+        if (SourceFolder == lastFolder && HasError)
+        {
+            SourceFolder = null;
+            ErrorMessage = null;
+        }
     }
 
     /// <summary>The PDFs that will be merged, in merge order.</summary>
@@ -83,38 +114,35 @@ public partial class MergeViewModel : PageViewModel
 
     public string EmptyStateText =>
         !HasFolder ? "Choose a folder to see the PDFs that will be merged."
+        : IsLoadingFiles ? "Reading the folder…"
         : HasError ? "The PDF files in this folder could not be listed."
         : "No PDF files were found in this folder.";
 
-    public string FileCountText => Files.Count == 1 ? "1 file" : $"{Files.Count} files";
+    public string FileCountText =>
+        IsLoadingFiles ? ""
+        : Files.Count == 1 ? "1 file"
+        : $"{Files.Count} files";
 
-    partial void OnSourceFolderChanged(string? value) => ReloadFolder();
-
-    [RelayCommand(CanExecute = nameof(CanChangeFolder))]
-    private void Browse()
+    // Concurrent executions are allowed so the user can pick another folder while a slow
+    // one is still being listed; the newest choice wins.
+    [RelayCommand(CanExecute = nameof(CanChangeFolder), AllowConcurrentExecutions = true)]
+    private async Task BrowseAsync()
     {
         var folder = _folderPicker.PickFolder(SourceFolder);
         if (folder is not null)
-            SelectFolder(folder);
+            await SelectFolderAsync(folder);
     }
 
     /// <summary>Sets the source folder, for example from a drag-and-drop.</summary>
-    [RelayCommand(CanExecute = nameof(CanChangeFolder))]
-    private void SelectFolder(string? path)
+    [RelayCommand(CanExecute = nameof(CanChangeFolder), AllowConcurrentExecutions = true)]
+    private async Task SelectFolderAsync(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return;
 
-        if (path == SourceFolder)
-            ReloadFolder(); // picking the same folder again refreshes the list
-        else
-            SourceFolder = path;
-
         // Only a folder that could be listed is worth offering again next time.
-        if (!HasError)
-        {
+        if (await LoadFolderAsync(path))
             _settings.Update(s => s with { LastMergeFolder = path });
-        }
     }
 
     [RelayCommand(CanExecute = nameof(CanMerge))]
@@ -163,7 +191,7 @@ public partial class MergeViewModel : PageViewModel
         }
     }
 
-    private bool CanMerge() => HasFiles && !IsBusy;
+    private bool CanMerge() => HasFiles && !IsBusy && !IsLoadingFiles;
 
     [RelayCommand(CanExecute = nameof(IsBusy))]
     private void Cancel() => _cancellation?.Cancel();
@@ -175,42 +203,50 @@ public partial class MergeViewModel : PageViewModel
         ProgressText = $"Merged {progress.FilesCompleted} of {progress.TotalFiles}: {progress.CurrentFile}";
     }
 
-    /// <summary>Offers the last used folder again, silently dropping it if it can no longer be listed.</summary>
-    private void RestoreLastFolder()
+    /// <summary>
+    /// Makes <paramref name="folder"/> the source folder and lists its files off the UI
+    /// thread. Returns true if the listing succeeded and is still the newest one.
+    /// </summary>
+    private async Task<bool> LoadFolderAsync(string folder)
     {
-        var lastFolder = _settings.Current.LastMergeFolder;
-        if (string.IsNullOrEmpty(lastFolder))
-            return;
+        var version = ++_listingVersion;
 
-        SourceFolder = lastFolder;
-        if (HasError)
-            SourceFolder = null;
-    }
-
-    private void ReloadFolder()
-    {
+        SourceFolder = folder;
         Result = null;
         ErrorMessage = null;
         NoticeMessage = null;
-        RefreshFiles();
+        SetFiles([]);
+        IsLoadingFiles = true;
+
+        IReadOnlyList<string> found;
+        try
+        {
+            found = await Task.Run(() => _finder.Find(folder));
+        }
+        catch (ExoPdfException ex)
+        {
+            if (version != _listingVersion)
+                return false;
+
+            ErrorMessage = ex.Message;
+            IsLoadingFiles = false;
+            return false;
+        }
+
+        // A newer listing has started; it owns the state now.
+        if (version != _listingVersion)
+            return false;
+
+        SetFiles(found);
+        IsLoadingFiles = false;
+        return true;
     }
 
-    private void RefreshFiles()
+    private void SetFiles(IEnumerable<string> paths)
     {
         Files.Clear();
-
-        if (HasFolder)
-        {
-            try
-            {
-                foreach (var file in _finder.Find(SourceFolder!))
-                    Files.Add(new MergeFileItem(file));
-            }
-            catch (ExoPdfException ex)
-            {
-                ErrorMessage = ex.Message;
-            }
-        }
+        foreach (var path in paths)
+            Files.Add(new MergeFileItem(path));
 
         OnPropertyChanged(nameof(HasFiles));
         OnPropertyChanged(nameof(FileCountText));

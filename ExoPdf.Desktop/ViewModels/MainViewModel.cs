@@ -22,6 +22,10 @@ public partial class MainViewModel : ObservableObject
             page.PropertyChanged += OnPagePropertyChanged;
     }
 
+    /// <summary>Lets every page do its start-up work. Call once, after the window is shown.</summary>
+    public Task InitializeAsync() =>
+        Task.WhenAll(Pages.Concat(FooterPages).Select(page => page.InitializeAsync()));
+
     public IReadOnlyList<PageViewModel> Pages { get; }
 
     public IReadOnlyList<PageViewModel> FooterPages { get; }
