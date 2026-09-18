@@ -94,6 +94,7 @@ Priority: **Must** = required for the first release of the UI.
 | DUI-1 | Must | The window has a left navigation sidebar listing the available operations, plus a Settings entry. Only Merge is listed today. |
 | DUI-2 | Must | Adding an operation requires only a new View, ViewModel and navigation entry. The shell is not modified. |
 | DUI-3 | Must | The window follows the Windows 11 Fluent look, with light and dark themes. |
+| DUI-4 | Should | The window's title bar matches the selected theme, on Windows 10 as well as Windows 11. With "Use system setting" it also follows a change of the Windows theme while the app is running. |
 
 ### Merge view
 
@@ -107,6 +108,7 @@ Priority: **Must** = required for the first release of the UI.
 | DUI-15 | Must | Errors (no PDFs, unreadable or locked file, folder not found) appear as a clear message in the view. The application does not crash. |
 | DUI-16 | Must | Merge behaviour, output naming and bookmarks are those defined under **Merge** above and come from `ExoPdf.Core`. The UI adds no PDF logic. |
 | DUI-19 | Should | While merging, the view shows progress (files completed of total) and a Cancel button. Cancelling leaves no output file and shows a neutral "Merge cancelled" message, not an error. |
+| DUI-25 | Should | Listing a folder does not block the window. While the files are being listed the view shows a loading state, and choosing another folder replaces a listing that is still running (the latest choice wins). The last-used folder is listed after the window appears, not before. This applies DUI-N3 to folder listing. |
 | DUI-17 | Later | The user reorders or deselects files before merging. |
 | DUI-18 | Later | The user adds individual files instead of, or in addition to, a folder. |
 
