@@ -14,6 +14,7 @@ public sealed class ThemeService : IThemeService, IDisposable
 {
     private AppTheme _theme = AppTheme.System;
     private bool _hooked;
+    private bool _disposed;
 
     public void Apply(AppTheme theme)
     {
@@ -32,6 +33,8 @@ public sealed class ThemeService : IThemeService, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+
         if (_hooked)
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
     }
@@ -43,14 +46,16 @@ public sealed class ThemeService : IThemeService, IDisposable
 
         _hooked = true;
 
-        // A window's handle exists once it has loaded; style windows created later too.
+        // Windows created later are styled when they load. (The main window is styled before
+        // it is shown; see App.OnStartup.) A class handler cannot be removed, so it checks
+        // whether this service has been disposed.
         EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnWindowLoaded));
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is Window window)
+        if (!_disposed && sender is Window window)
             ApplyTo(window);
     }
 

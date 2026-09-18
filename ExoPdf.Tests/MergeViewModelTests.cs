@@ -159,6 +159,42 @@ public class MergeViewModelTests
     }
 
     [Fact]
+    public async Task Initialize_AnUnusableLastFolder_NeverShowsAnError_NotEvenBriefly()
+    {
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var vm = CreateViewModel();
+        var errorAnnouncements = new List<string?>();
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MergeViewModel.HasError) or nameof(MergeViewModel.ErrorMessage))
+                errorAnnouncements.Add(e.PropertyName);
+        };
+
+        await vm.InitializeAsync();
+
+        Assert.Empty(errorAnnouncements);
+        Assert.False(vm.HasFolder);
+    }
+
+    [Fact]
+    public async Task Initialize_ThenTheUserPicksTheSameBrokenFolder_TheUserStillGetsTheError()
+    {
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var gate = _finder.Hold(Folder); // not registered: both listings fail once released
+        var vm = CreateViewModel();
+        var starting = vm.InitializeAsync();
+
+        var picking = vm.SelectFolderCommand.ExecuteAsync(Folder);
+        gate.Set();
+        await picking;
+        await starting;
+
+        Assert.Equal(Folder, vm.SourceFolder);
+        Assert.True(vm.HasError);
+        Assert.False(vm.IsLoadingFiles);
+    }
+
+    [Fact]
     public async Task Initialize_WithNoLastFolder_DoesNothing()
     {
         var vm = CreateViewModel();
@@ -321,6 +357,17 @@ public class MergeViewModelTests
         Assert.True(vm.HasError);
         Assert.False(vm.IsLoadingFiles);
         Assert.Equal("The PDF files in this folder could not be listed.", vm.EmptyStateText);
+    }
+
+    [Fact]
+    public async Task SelectFolder_AnUnexpectedFailure_IsNotHidden_ButNeverLeavesLoadingStuck()
+    {
+        _finder.Fail(Folder, new NullReferenceException("a bug"));
+        var vm = CreateViewModel();
+
+        await Assert.ThrowsAsync<NullReferenceException>(() => vm.SelectFolderCommand.ExecuteAsync(Folder));
+
+        Assert.False(vm.IsLoadingFiles);
     }
 
     [Fact]

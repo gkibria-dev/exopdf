@@ -24,6 +24,11 @@ internal static class DwmTitleBar
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    private const uint GaRootOwner = 3;
+
+    [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 
     /// <summary>Returns false if the system does not support it; the title bar then simply stays as it was.</summary>
@@ -51,7 +56,10 @@ internal static class DwmTitleBar
     // it back, so the window ends up exactly as active as it was.
     private static void Repaint(IntPtr windowHandle)
     {
-        var active = GetForegroundWindow() == windowHandle;
+        // A window looks active while one of its own dialogs is in front, so ask whether
+        // the foreground window belongs to this window, not whether it is this window.
+        var foreground = GetForegroundWindow();
+        var active = foreground != IntPtr.Zero && GetAncestor(foreground, GaRootOwner) == windowHandle;
 
         SendMessage(windowHandle, WmNcActivate, active ? IntPtr.Zero : 1, IntPtr.Zero);
         SendMessage(windowHandle, WmNcActivate, active ? 1 : IntPtr.Zero, IntPtr.Zero);

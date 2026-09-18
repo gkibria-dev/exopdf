@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Interop;
 using System.IO.Abstractions;
 using ExoPdf.Core.Merging;
 using ExoPdf.Core.Operations;
@@ -22,12 +23,18 @@ public partial class App : Application
 
         _services = BuildServices();
 
-        var settings = _services.GetRequiredService<ISettingsService>();
-        _services.GetRequiredService<IThemeService>().Apply(settings.Current.Theme);
-
         var mainViewModel = _services.GetRequiredService<MainViewModel>();
         var window = new MainWindow { DataContext = mainViewModel };
         MainWindow = window;
+
+        // Create the native window (still invisible) so the theme, including the title bar,
+        // is applied before anything is shown; otherwise a dark-theme user would see a light
+        // title bar first and then a repaint.
+        new WindowInteropHelper(window).EnsureHandle();
+
+        var settings = _services.GetRequiredService<ISettingsService>();
+        _services.GetRequiredService<IThemeService>().Apply(settings.Current.Theme);
+
         window.Show();
 
         // Start-up work such as listing the last folder runs after the window is visible,

@@ -85,15 +85,7 @@ public partial class MergeViewModel : PageViewModel
         if (string.IsNullOrEmpty(lastFolder))
             return;
 
-        await LoadFolderAsync(lastFolder);
-
-        // A folder that can no longer be listed is dropped without an error. If the user
-        // has chosen something else in the meantime, leave their choice alone.
-        if (SourceFolder == lastFolder && HasError)
-        {
-            SourceFolder = null;
-            ErrorMessage = null;
-        }
+        await LoadFolderAsync(lastFolder, restoring: true);
     }
 
     /// <summary>The PDFs that will be merged, in merge order.</summary>
@@ -207,7 +199,11 @@ public partial class MergeViewModel : PageViewModel
     /// Makes <paramref name="folder"/> the source folder and lists its files off the UI
     /// thread. Returns true if the listing succeeded and is still the newest one.
     /// </summary>
-    private async Task<bool> LoadFolderAsync(string folder)
+    /// <param name="restoring">
+    /// True when offering the last used folder at start-up: if it can no longer be listed
+    /// it is dropped quietly, with no error shown, because the user did not just choose it.
+    /// </param>
+    private async Task<bool> LoadFolderAsync(string folder, bool restoring = false)
     {
         var version = ++_listingVersion;
 
@@ -218,28 +214,36 @@ public partial class MergeViewModel : PageViewModel
         SetFiles([]);
         IsLoadingFiles = true;
 
-        IReadOnlyList<string> found;
         try
         {
-            found = await Task.Run(() => _finder.Find(folder));
+            var found = await Task.Run(() => _finder.Find(folder));
+
+            // A newer listing has started; it owns the state now.
+            if (version != _listingVersion)
+                return false;
+
+            SetFiles(found);
+            return true;
         }
         catch (ExoPdfException ex)
         {
             if (version != _listingVersion)
                 return false;
 
-            ErrorMessage = ex.Message;
-            IsLoadingFiles = false;
+            if (restoring)
+                SourceFolder = null;
+            else
+                ErrorMessage = ex.Message;
+
             return false;
         }
-
-        // A newer listing has started; it owns the state now.
-        if (version != _listingVersion)
-            return false;
-
-        SetFiles(found);
-        IsLoadingFiles = false;
-        return true;
+        finally
+        {
+            // Also runs when something unexpected escapes, so "Reading the folder…" can
+            // never be left showing.
+            if (version == _listingVersion)
+                IsLoadingFiles = false;
+        }
     }
 
     private void SetFiles(IEnumerable<string> paths)
