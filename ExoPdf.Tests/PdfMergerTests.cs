@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 using ExoPdf.Core.Operations;
@@ -163,14 +164,16 @@ public class PdfMergerTests
     [Fact]
     public void Merge_MissingFolder_Throws()
     {
-        Assert.Throws<DirectoryNotFoundException>(
+        Assert.Throws<SourceFolderNotFoundException>(
             () => _merger.Merge(new MergeOptions { SourceFolderPath = @"C:\docs\missing" }));
     }
 
     [Fact]
     public void Merge_NoPdfFiles_Throws()
     {
-        Assert.Throws<InvalidOperationException>(RunMerge);
+        var exception = Assert.Throws<NoPdfFilesException>(RunMerge);
+
+        Assert.Equal(Folder, exception.FolderPath);
     }
 
     [Fact]
@@ -205,9 +208,46 @@ public class PdfMergerTests
         AddPdf("a.pdf", 1);
         _fileSystem.AddFile(Path.Combine(Folder, "broken.pdf"), new MockFileData("this is not a pdf"));
 
-        Assert.ThrowsAny<Exception>(RunMerge);
+        Assert.ThrowsAny<ExoPdfException>(RunMerge);
 
         Assert.Equal(["a.pdf", "broken.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void Merge_UnreadablePdf_ReportsWhichFileIsBroken()
+    {
+        AddPdf("a.pdf", 1);
+        var brokenPath = Path.Combine(Folder, "broken.pdf");
+        _fileSystem.AddFile(brokenPath, new MockFileData("this is not a pdf"));
+
+        var exception = Assert.Throws<PdfUnreadableException>(RunMerge);
+
+        Assert.Equal(brokenPath, exception.FilePath);
+        Assert.Contains("\"broken.pdf\"", exception.Message);
+        Assert.NotNull(exception.InnerException);
+    }
+
+    [Fact]
+    public void Merge_EmptyFile_IsReportedAsUnreadable()
+    {
+        _fileSystem.AddFile(Path.Combine(Folder, "empty.pdf"), new MockFileData(""));
+
+        Assert.Throws<PdfUnreadableException>(RunMerge);
+    }
+
+    [Fact]
+    public void Merge_OutputCannotBeWritten_ReportsTheFolderAndLeavesNothingBehind()
+    {
+        AddPdf("a.pdf", 1);
+        // A read-only file where the temporary file will be created makes writing fail.
+        _fileSystem.AddFile(
+            Path.Combine(Folder, "Merge_Invoices_20260918103005.pdf.tmp"),
+            new MockFileData("") { Attributes = FileAttributes.ReadOnly });
+
+        var exception = Assert.Throws<OutputWriteException>(RunMerge);
+
+        Assert.Equal(Folder, exception.FolderPath);
+        Assert.DoesNotContain(_fileSystem.Directory.GetFiles(Folder), f => f.EndsWith(".pdf") && f.Contains("Merge_"));
     }
 
     [Fact]

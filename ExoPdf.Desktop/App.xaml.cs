@@ -16,6 +16,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        DispatcherUnhandledException += OnUnhandledException;
+
         _services = BuildServices();
 
         var settings = _services.GetRequiredService<ISettingsStore>();
@@ -24,6 +26,17 @@ public partial class App : Application
         var window = new MainWindow { DataContext = _services.GetRequiredService<MainViewModel>() };
         MainWindow = window;
         window.Show();
+    }
+
+    // DUI-N7: an unexpected error is reported, not swallowed and not a silent exit.
+    private void OnUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        MessageBox.Show(
+            $"ExoPdf ran into an unexpected problem.{Environment.NewLine}{Environment.NewLine}{e.Exception.Message}",
+            "ExoPdf",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+        e.Handled = true;
     }
 
     protected override void OnExit(ExitEventArgs e)

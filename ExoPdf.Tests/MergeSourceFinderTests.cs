@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Merging;
 using Microsoft.Extensions.Time.Testing;
 
@@ -90,6 +91,8 @@ public class MergeSourceFinderTests
     [Fact]
     public void Find_MissingFolder_Throws()
     {
-        Assert.Throws<DirectoryNotFoundException>(() => _finder.Find(@"C:\docs\missing"));
+        var exception = Assert.Throws<SourceFolderNotFoundException>(() => _finder.Find(@"C:\docs\missing"));
+
+        Assert.Equal(@"C:\docs\missing", exception.FolderPath);
     }
 }

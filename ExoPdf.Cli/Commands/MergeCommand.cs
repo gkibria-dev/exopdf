@@ -1,4 +1,5 @@
 using System.CommandLine;
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 
@@ -32,10 +33,10 @@ public static class MergeCommand
                 output.WriteLine($"Output: {result.OutputFilePath}");
                 return 0;
             }
-            catch (Exception ex)
+            catch (ExoPdfException ex)
             {
-                // Same policy as the Desktop frontend: any failure (missing folder,
-                // corrupt or locked PDF, no write access) is a message and exit code 1.
+                // An expected failure (missing folder, unreadable PDF, ...): show the
+                // message. Anything else is a bug and is left to CliApp.
                 error.WriteLine(ex.Message);
                 return 1;
             }

@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
-using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 using ExoPdf.Desktop.Services;
@@ -117,10 +117,10 @@ public partial class MergeViewModel : PageViewModel
         {
             Result = await Task.Run(() => _merger.Merge(options));
         }
-        catch (Exception ex)
+        catch (ExoPdfException ex)
         {
-            // Last line of defence at the UI boundary: whatever went wrong (locked or
-            // corrupt file, permissions), show it rather than crash.
+            // An expected failure: show it. Anything else is a bug and reaches the
+            // application's unexpected-error dialog.
             ErrorMessage = ex.Message;
         }
         finally
@@ -151,7 +151,7 @@ public partial class MergeViewModel : PageViewModel
         {
             action();
         }
-        catch (Exception ex)
+        catch (ShellLaunchException ex)
         {
             ErrorMessage = ex.Message;
         }
@@ -187,7 +187,7 @@ public partial class MergeViewModel : PageViewModel
                 foreach (var file in _finder.Find(SourceFolder!))
                     Files.Add(new MergeFileItem(file));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (ExoPdfException ex)
             {
                 ErrorMessage = ex.Message;
             }

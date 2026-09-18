@@ -1,5 +1,6 @@
 using System.CommandLine;
 using ExoPdf.Cli.Commands;
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Models;
 
 namespace ExoPdf.Tests;
@@ -41,7 +42,7 @@ public class MergeCommandTests
     [Fact]
     public void Merge_Failure_PrintsTheMessageToTheErrorStream_AndReturnsOne()
     {
-        _merger.Exception = new InvalidOperationException("No PDF files to merge in: C:\\docs");
+        _merger.Exception = new NoPdfFilesException(@"C:\docs");
 
         var exitCode = Run("merge", @"C:\docs");
 

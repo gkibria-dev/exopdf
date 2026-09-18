@@ -1,3 +1,4 @@
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Merging;
 using ExoPdf.Core.Models;
 using ExoPdf.Desktop.Models;
@@ -77,7 +78,7 @@ internal class FakeMergeSourceFinder : IMergeSourceFinder
     public IReadOnlyList<string> Find(string folderPath) =>
         _folders.TryGetValue(folderPath, out var files)
             ? files
-            : throw new DirectoryNotFoundException($"Folder not found: {folderPath}");
+            : throw new SourceFolderNotFoundException(folderPath);
 }
 
 internal class FakePdfMerger : IPdfMerger

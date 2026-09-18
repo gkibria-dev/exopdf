@@ -1,4 +1,6 @@
+using ExoPdf.Core.Errors;
 using ExoPdf.Core.Models;
+using ExoPdf.Desktop.Services;
 using ExoPdf.Desktop.ViewModels;
 
 namespace ExoPdf.Tests;
@@ -221,22 +223,36 @@ public class MergeViewModelTests
     public async Task Merge_Fails_ShowsTheMessageInsteadOfThrowing()
     {
         _finder.AddFolder(Folder, "a.pdf");
-        _merger.Exception = new InvalidOperationException("boom");
+        _merger.Exception = new PdfUnreadableException(@"C:\docs\Invoices\a.pdf", new InvalidOperationException("bad header"));
         var vm = CreateViewModel();
         vm.SelectFolderCommand.Execute(Folder);
 
         await vm.MergeCommand.ExecuteAsync(null);
 
-        Assert.Equal("boom", vm.ErrorMessage);
+        Assert.Equal("Cannot read \"a.pdf\": bad header", vm.ErrorMessage);
         Assert.Null(vm.Result);
         Assert.False(vm.IsBusy);
+    }
+
+    [Fact]
+    public async Task Merge_UnexpectedFailure_IsNotHiddenButStillEndsTheBusyState()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.Exception = new NullReferenceException("a bug");
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+
+        await Assert.ThrowsAsync<NullReferenceException>(() => vm.MergeCommand.ExecuteAsync(null));
+
+        Assert.False(vm.IsBusy);
+        Assert.False(vm.HasError);
     }
 
     [Fact]
     public async Task Merge_AfterAFailure_ClearsTheOldError()
     {
         _finder.AddFolder(Folder, "a.pdf");
-        _merger.Exception = new InvalidOperationException("boom");
+        _merger.Exception = new NoPdfFilesException(Folder);
         var vm = CreateViewModel();
         vm.SelectFolderCommand.Execute(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
@@ -285,7 +301,7 @@ public class MergeViewModelTests
         var vm = CreateViewModel();
         vm.SelectFolderCommand.Execute(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
-        _shell.ThrowOnLaunch = new InvalidOperationException("no viewer");
+        _shell.ThrowOnLaunch = new ShellLaunchException("no viewer");
 
         vm.OpenResultCommand.Execute(null);
 
