@@ -38,5 +38,6 @@ Three-project solution. See [docs/architecture.md](docs/architecture.md) for ful
 - [Development workflow](docs/agentic-workflow.md) — branch, plan, implement, review, PR cycle
 - [Requirements](docs/requirements.md) — goals, operations, non-goals
 - [Architecture](docs/architecture.md) — solution structure, layer responsibilities, naming conventions
+- [How to add a PDF operation](docs/how-to/add-a-pdf-operation.md) — step-by-step checklist
 - [ADRs](docs/adr/) — one file per significant decision
 - Plans: `docs/plans/` — one file per feature/fix, created before implementation

@@ -189,3 +189,42 @@ Each step is one commit. The solution builds and all tests pass after each one.
 - New PDF operations.
 - Any frontend that uses `MergeOptions.Files` (DUI-17, DUI-18).
 - Changes to the CLI's command-line syntax.
+
+## Outcome and deviations
+
+Steps 1 to 7 were implemented as one commit each on `feature/desktop-ui`. Where the
+result differs from the plan above:
+
+- **Step 1 also added `IPdfMerger` and `IMergeSourceFinder`** (planned for step 2),
+  because `PdfMerger` needed them in its constructor. Step 2 changed the consumers.
+- **`OutputWriteException` was added** to the error types. Without it, a plain user
+  problem such as a read-only folder would have fallen through to the
+  unexpected-error dialog once the catch-everything blocks were removed.
+- **`ShellLaunchException` (Desktop) was added** so shell failures are typed like
+  Core failures.
+- **`CliApp`** was added so the CLI's last-resort handler is testable. It turns off
+  System.CommandLine's own exception handler, which would otherwise print the
+  exception and return exit code 1, the same as an expected failure.
+- **Temporary-file cleanup is best effort.** A test showed that a failing delete
+  could hide the real error.
+- **Progress uses `DirectProgress`**, not `Progress<T>`, so reports arrive in order
+  and are testable without a UI thread. WPF marshals the property changes.
+- **Navigation (D5):** the radio-button model needed two additions found by running
+  the app: `SelectOnFocusBehavior` (arrow keys did not select across the two lists)
+  and `KeyboardNavigation.TabNavigation="Once"` on the sidebar (a per-entry roving
+  tab stop broke the arrow keys, and plain Tab switched pages).
+- **Deferred as planned:** C8 (shared operation contract) and D7 (icon glyph in the
+  ViewModel).
+
+## Review round
+
+A code review of the finished branch (`/code-review`, and `/security-review`, which
+found nothing) led to one more commit. Changed: the ViewModel merges exactly the
+listed files (`MergeOptions.Files`); read failures are translated narrowly and a
+zero-page PDF is reported; Ctrl+C cancels the CLI merge (exit 130); a failure before
+the window exists shuts the app down; the navigation model no longer reacts to the
+radio group's uncheck write-back; `DragOver` no longer probes the disk.
+
+Reviewed and left unchanged: the folder scan at startup is still synchronous on the
+UI thread (needs asynchronous loading, not planned); `SelectOnFocusBehavior` stays
+because focus can only rest on the selected entry or move there by arrow key.
