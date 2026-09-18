@@ -16,6 +16,8 @@ public partial class MergeViewModel : PageViewModel
     private readonly IShellLauncher _shell;
     private readonly ISettingsStore _settings;
 
+    private CancellationTokenSource? _cancellation;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasFolder))]
     [NotifyPropertyChangedFor(nameof(EmptyStateText))]
@@ -25,18 +27,31 @@ public partial class MergeViewModel : PageViewModel
     [NotifyCanExecuteChangedFor(nameof(MergeCommand))]
     [NotifyCanExecuteChangedFor(nameof(BrowseCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFolderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyPropertyChangedFor(nameof(CanChangeFolder))]
     private bool _isBusy;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasResult))]
-    [NotifyPropertyChangedFor(nameof(ResultSummary))]
-    private MergeResult? _result;
+    private MergeResultViewModel? _result;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
     [NotifyPropertyChangedFor(nameof(EmptyStateText))]
     private string? _errorMessage;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotice))]
+    private string? _noticeMessage;
+
+    [ObservableProperty]
+    private int _filesCompleted;
+
+    [ObservableProperty]
+    private int _totalFiles;
+
+    [ObservableProperty]
+    private string _progressText = "";
 
     public MergeViewModel(IPdfMerger merger, IMergeSourceFinder finder, IFolderPicker folderPicker, IShellLauncher shell, ISettingsStore settings)
         : base("Merge", "\uE8C8")
@@ -61,6 +76,9 @@ public partial class MergeViewModel : PageViewModel
 
     public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
 
+    /// <summary>A neutral message that is not an error, such as "Merge cancelled."</summary>
+    public bool HasNotice => !string.IsNullOrEmpty(NoticeMessage);
+
     public bool CanChangeFolder => !IsBusy;
 
     public string EmptyStateText =>
@@ -69,10 +87,6 @@ public partial class MergeViewModel : PageViewModel
         : "No PDF files were found in this folder.";
 
     public string FileCountText => Files.Count == 1 ? "1 file" : $"{Files.Count} files";
-
-    public string? ResultSummary => Result is null
-        ? null
-        : $"Merged {Result.FilesMerged} {(Result.FilesMerged == 1 ? "file" : "files")} ({Result.TotalPages} {(Result.TotalPages == 1 ? "page" : "pages")})";
 
     partial void OnSourceFolderChanged(string? value) => ReloadFolder();
 
@@ -111,11 +125,26 @@ public partial class MergeViewModel : PageViewModel
 
         IsBusy = true;
         ErrorMessage = null;
+        NoticeMessage = null;
         Result = null;
+        FilesCompleted = 0;
+        TotalFiles = Files.Count;
+        ProgressText = "Starting…";
+
+        using var cancellation = new CancellationTokenSource();
+        _cancellation = cancellation;
 
         try
         {
-            Result = await Task.Run(() => _merger.Merge(options));
+            // Reports are handled directly on the merging thread: WPF bindings marshal
+            // property changes to the UI thread, and tests see them in order.
+            var progress = new DirectProgress<MergeProgress>(OnProgress);
+            var result = await Task.Run(() => _merger.Merge(options, progress, cancellation.Token), cancellation.Token);
+            Result = new MergeResultViewModel(result, _shell);
+        }
+        catch (OperationCanceledException)
+        {
+            NoticeMessage = "Merge cancelled.";
         }
         catch (ExoPdfException ex)
         {
@@ -125,36 +154,21 @@ public partial class MergeViewModel : PageViewModel
         }
         finally
         {
+            _cancellation = null;
             IsBusy = false;
         }
     }
 
     private bool CanMerge() => HasFiles && !IsBusy;
 
-    [RelayCommand]
-    private void OpenResult()
-    {
-        if (Result is { } result)
-            Launch(() => _shell.OpenFile(result.OutputFilePath));
-    }
+    [RelayCommand(CanExecute = nameof(IsBusy))]
+    private void Cancel() => _cancellation?.Cancel();
 
-    [RelayCommand]
-    private void ShowResultInFolder()
+    private void OnProgress(MergeProgress progress)
     {
-        if (Result is { } result)
-            Launch(() => _shell.ShowInFolder(result.OutputFilePath));
-    }
-
-    private void Launch(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (ShellLaunchException ex)
-        {
-            ErrorMessage = ex.Message;
-        }
+        FilesCompleted = progress.FilesCompleted;
+        TotalFiles = progress.TotalFiles;
+        ProgressText = $"Merged {progress.FilesCompleted} of {progress.TotalFiles}: {progress.CurrentFile}";
     }
 
     /// <summary>Offers the last used folder again, silently dropping it if it can no longer be listed.</summary>
@@ -173,6 +187,7 @@ public partial class MergeViewModel : PageViewModel
     {
         Result = null;
         ErrorMessage = null;
+        NoticeMessage = null;
         RefreshFiles();
     }
 

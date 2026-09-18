@@ -101,6 +101,9 @@ internal class FakePdfMerger : IPdfMerger
     /// <summary>Reports made through the progress sink before the merge waits at the gate.</summary>
     public List<MergeProgress> ProgressToReport { get; } = [];
 
+    /// <summary>Set once the progress reports have been delivered.</summary>
+    public ManualResetEventSlim Reported { get; } = new(false);
+
     public MergeResult Merge(MergeOptions options, IProgress<MergeProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         Calls.Add(options);
@@ -109,8 +112,9 @@ internal class FakePdfMerger : IPdfMerger
 
         foreach (var report in ProgressToReport)
             progress?.Report(report);
+        Reported.Set();
 
-        Gate?.Wait();
+        Gate?.Wait(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (Exception is not null)

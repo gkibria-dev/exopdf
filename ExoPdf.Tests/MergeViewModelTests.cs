@@ -178,7 +178,8 @@ public class MergeViewModelTests
         await vm.MergeCommand.ExecuteAsync(null);
 
         Assert.Equal(Folder, Assert.Single(_merger.Calls).SourceFolderPath);
-        Assert.Equal("Merged 2 files (5 pages)", vm.ResultSummary);
+        Assert.Equal("Merged 2 files (5 pages)", vm.Result!.Summary);
+        Assert.Equal(Path.Combine(Folder, "out.pdf"), vm.Result.OutputFilePath);
         Assert.True(vm.HasResult);
         Assert.False(vm.HasError);
         Assert.False(vm.IsBusy);
@@ -194,7 +195,7 @@ public class MergeViewModelTests
 
         await vm.MergeCommand.ExecuteAsync(null);
 
-        Assert.Equal("Merged 1 file (1 page)", vm.ResultSummary);
+        Assert.Equal("Merged 1 file (1 page)", vm.Result!.Summary);
     }
 
     [Fact]
@@ -280,41 +281,141 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public async Task OpenResult_LaunchesOutputFile()
+    public async Task Merge_Result_OpensThroughTheShellLauncher()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
         vm.SelectFolderCommand.Execute(Folder);
         await vm.MergeCommand.ExecuteAsync(null);
 
-        vm.OpenResultCommand.Execute(null);
-        vm.ShowResultInFolderCommand.Execute(null);
+        vm.Result!.OpenCommand.Execute(null);
 
-        Assert.Equal([vm.Result!.OutputFilePath], _shell.OpenedFiles);
-        Assert.Equal([vm.Result.OutputFilePath], _shell.ShownInFolder);
+        Assert.Equal([vm.Result.OutputFilePath], _shell.OpenedFiles);
+    }
+
+    // --- progress -----------------------------------------------------------
+
+    [Fact]
+    public async Task Merge_StartsWithZeroProgressOutOfTheListedFiles()
+    {
+        _finder.AddFolder(Folder, "a.pdf", "b.pdf", "c.pdf");
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, vm.FilesCompleted);
+        Assert.Equal(3, vm.TotalFiles);
+        Assert.Equal("Starting…", vm.ProgressText);
+
+        _merger.Gate.Set();
+        await running;
     }
 
     [Fact]
-    public async Task OpenResult_LauncherFails_ShowsError()
+    public async Task Merge_ShowsTheProgressTheMergerReports()
+    {
+        _finder.AddFolder(Folder, "a.pdf", "b.pdf", "c.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 3, "a.pdf"));
+        _merger.ProgressToReport.Add(new MergeProgress(2, 3, "b.pdf"));
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        Assert.True(_merger.Reported.Wait(TimeSpan.FromSeconds(5)));
+
+        Assert.Equal(2, vm.FilesCompleted);
+        Assert.Equal(3, vm.TotalFiles);
+        Assert.Equal("Merged 2 of 3: b.pdf", vm.ProgressText);
+
+        _merger.Gate.Set();
+        await running;
+    }
+
+    // --- cancellation -------------------------------------------------------
+
+    [Fact]
+    public async Task Cancel_IsOnlyPossibleWhileMerging()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+        Assert.False(vm.CancelCommand.CanExecute(null));
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+
+        _merger.Gate.Set();
+        await running;
+        Assert.False(vm.CancelCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Cancel_StopsTheMerge_ShowsANeutralNotice_AndNoResultOrError()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        vm.CancelCommand.Execute(null);
+        await running;
+
+        Assert.Equal("Merge cancelled.", vm.NoticeMessage);
+        Assert.True(vm.HasNotice);
+        Assert.False(vm.HasError);
+        Assert.False(vm.HasResult);
+        Assert.False(vm.IsBusy);
+    }
+
+    [Fact]
+    public async Task Merge_PassesACancellableToken()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
         vm.SelectFolderCommand.Execute(Folder);
+
         await vm.MergeCommand.ExecuteAsync(null);
-        _shell.ThrowOnLaunch = new ShellLaunchException("no viewer");
 
-        vm.OpenResultCommand.Execute(null);
-
-        Assert.Equal("no viewer", vm.ErrorMessage);
+        Assert.True(_merger.LastToken.CanBeCanceled);
     }
 
     [Fact]
-    public void OpenResult_BeforeAnyMerge_DoesNothing()
+    public async Task Merge_AfterACancel_WorksAgainAndClearsTheNotice()
     {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.Gate = new ManualResetEventSlim(false);
         var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+        var first = vm.MergeCommand.ExecuteAsync(null);
+        vm.CancelCommand.Execute(null);
+        await first;
 
-        vm.OpenResultCommand.Execute(null);
+        _merger.Gate = null;
+        await vm.MergeCommand.ExecuteAsync(null);
 
-        Assert.Empty(_shell.OpenedFiles);
+        Assert.False(vm.HasNotice);
+        Assert.True(vm.HasResult);
+    }
+
+    [Fact]
+    public async Task SelectingAnotherFolder_ClearsTheCancelledNotice()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _finder.AddFolder(@"C:\docs\Other", "b.pdf");
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        vm.SelectFolderCommand.Execute(Folder);
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        vm.CancelCommand.Execute(null);
+        await running;
+
+        vm.SelectFolderCommand.Execute(@"C:\docs\Other");
+
+        Assert.False(vm.HasNotice);
     }
 }

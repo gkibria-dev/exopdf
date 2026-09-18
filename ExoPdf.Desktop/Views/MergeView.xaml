@@ -108,16 +108,26 @@
             <Border Style="{StaticResource SuccessPanel}" Margin="0,0,0,16"
                     Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
-                    <TextBlock Text="{Binding ResultSummary}" FontWeight="SemiBold"
+                    <TextBlock Text="{Binding Result.Summary}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                     <TextBlock Margin="0,4,0,12" TextWrapping="Wrap" FontSize="14"
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                Text="{Binding Result.OutputFilePath}" />
                     <StackPanel Orientation="Horizontal">
-                        <Button Content="_Open file" Command="{Binding OpenResultCommand}" Margin="0,0,8,0" />
-                        <Button Content="Show in _folder" Command="{Binding ShowResultInFolderCommand}" />
+                        <Button Content="_Open file" Command="{Binding Result.OpenCommand}" Margin="0,0,8,0" />
+                        <Button Content="Show in _folder" Command="{Binding Result.ShowInFolderCommand}" />
                     </StackPanel>
+                    <TextBlock Margin="0,12,0,0" TextWrapping="Wrap"
+                               Text="{Binding Result.LaunchError}"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                               Visibility="{Binding Result.HasLaunchError, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                    Visibility="{Binding HasNotice, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding NoticeMessage}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
             </Border>
 
             <Border Style="{StaticResource ErrorPanel}" Margin="0,0,0,16"
@@ -146,9 +156,17 @@
                     </AccessText.Style>
                 </AccessText>
             </Button>
-            <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,16,0" VerticalAlignment="Center"
-                         AutomationProperties.Name="Merging in progress"
-                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+            <Button DockPanel.Dock="Right" Content="_Cancel" MinWidth="96" Margin="0,0,8,0" IsCancel="True"
+                    Command="{Binding CancelCommand}"
+                    AutomationProperties.Name="Cancel the merge"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"
+                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding ProgressText}" Style="{StaticResource SectionLabel}" Margin="0,0,0,6"
+                           TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite" />
+                <ProgressBar Minimum="0" Maximum="{Binding TotalFiles}" Value="{Binding FilesCompleted}" Height="4"
+                             AutomationProperties.Name="Merge progress" />
+            </StackPanel>
         </DockPanel>
     </Grid>
 </UserControl>
