@@ -8,13 +8,13 @@ public record ThemeOption(AppTheme Value, string Label);
 
 public partial class SettingsViewModel : PageViewModel
 {
-    private readonly ISettingsStore _settings;
+    private readonly ISettingsService _settings;
     private readonly IThemeService _themeService;
 
     [ObservableProperty]
     private AppTheme _theme;
 
-    public SettingsViewModel(ISettingsStore settings, IThemeService themeService)
+    public SettingsViewModel(ISettingsService settings, IThemeService themeService)
         : base("Settings", "\uE713", NavigationPlacement.Footer)
     {
         _settings = settings;
@@ -32,7 +32,6 @@ public partial class SettingsViewModel : PageViewModel
     partial void OnThemeChanged(AppTheme value)
     {
         _themeService.Apply(value);
-        _settings.Current.Theme = value;
-        _settings.Save();
+        _settings.Update(s => s with { Theme = value });
     }
 }

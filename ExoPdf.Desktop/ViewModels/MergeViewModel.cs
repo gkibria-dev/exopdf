@@ -14,7 +14,7 @@ public partial class MergeViewModel : PageViewModel
     private readonly IMergeSourceFinder _finder;
     private readonly IFolderPicker _folderPicker;
     private readonly IShellLauncher _shell;
-    private readonly ISettingsStore _settings;
+    private readonly ISettingsService _settings;
 
     private CancellationTokenSource? _cancellation;
 
@@ -53,7 +53,7 @@ public partial class MergeViewModel : PageViewModel
     [ObservableProperty]
     private string _progressText = "";
 
-    public MergeViewModel(IPdfMerger merger, IMergeSourceFinder finder, IFolderPicker folderPicker, IShellLauncher shell, ISettingsStore settings)
+    public MergeViewModel(IPdfMerger merger, IMergeSourceFinder finder, IFolderPicker folderPicker, IShellLauncher shell, ISettingsService settings)
         : base("Merge", "\uE8C8")
     {
         _merger = merger;
@@ -113,8 +113,7 @@ public partial class MergeViewModel : PageViewModel
         // Only a folder that could be listed is worth offering again next time.
         if (!HasError)
         {
-            _settings.Current.LastMergeFolder = path;
-            _settings.Save();
+            _settings.Update(s => s with { LastMergeFolder = path });
         }
     }
 

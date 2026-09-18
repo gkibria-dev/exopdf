@@ -8,11 +8,13 @@ public enum AppTheme
 }
 
 /// <summary>
-/// Desktop settings persisted between launches. Add new settings as properties with
-/// defaults; older settings files that lack them keep working.
+/// Desktop settings persisted between launches. Immutable: change them with
+/// <c>ISettingsService.Update(s =&gt; s with { ... })</c>. Add new settings as properties
+/// with defaults; older settings files that lack them keep working.
 /// </summary>
-public class AppSettings
+public sealed record AppSettings
 {
-    public AppTheme Theme { get; set; } = AppTheme.System;
-    public string? LastMergeFolder { get; set; }
+    public AppTheme Theme { get; init; } = AppTheme.System;
+
+    public string? LastMergeFolder { get; init; }
 }

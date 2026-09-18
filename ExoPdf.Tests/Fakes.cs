@@ -50,13 +50,40 @@ internal class FakeThemeService : IThemeService
     public void Apply(AppTheme theme) => Applied.Add(theme);
 }
 
+internal class FakeSettingsService : ISettingsService
+{
+    /// <summary>Set this in a test to preload settings.</summary>
+    public AppSettings Current { get; set; } = new();
+
+    public int UpdateCount { get; private set; }
+
+    public void Update(Func<AppSettings, AppSettings> change)
+    {
+        Current = change(Current);
+        UpdateCount++;
+    }
+}
+
 internal class FakeSettingsStore : ISettingsStore
 {
-    public AppSettings Current { get; } = new();
+    /// <summary>What <see cref="Load"/> returns.</summary>
+    public AppSettings Stored { get; set; } = new();
 
-    public int SaveCount { get; private set; }
+    public int LoadCount { get; private set; }
 
-    public void Save() => SaveCount++;
+    public List<AppSettings> Saved { get; } = [];
+
+    public AppSettings Load()
+    {
+        LoadCount++;
+        return Stored;
+    }
+
+    public void Save(AppSettings settings)
+    {
+        Saved.Add(settings);
+        Stored = settings;
+    }
 }
 
 internal class TestPage : PageViewModel

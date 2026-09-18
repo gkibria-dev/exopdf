@@ -1,131 +1,128 @@
+using System.IO.Abstractions.TestingHelpers;
 using ExoPdf.Desktop.Models;
 using ExoPdf.Desktop.Services;
 
 namespace ExoPdf.Tests;
 
-public class JsonSettingsStoreTests : IDisposable
+public class JsonSettingsStoreTests
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-    private string FilePath => Path.Combine(_folder, "ExoPdf", "settings.json");
+    private const string FilePath = @"C:\Users\me\AppData\Roaming\ExoPdf\settings.json";
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_folder))
-            Directory.Delete(_folder, recursive: true);
-    }
+    private readonly MockFileSystem _fileSystem = new();
+    private readonly JsonSettingsStore _store;
 
-    private void WriteFile(string content)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        File.WriteAllText(FilePath, content);
-    }
+    public JsonSettingsStoreTests() => _store = new JsonSettingsStore(_fileSystem, FilePath);
+
+    private void WriteFile(string content) => _fileSystem.AddFile(FilePath, new MockFileData(content));
 
     [Fact]
-    public void MissingFile_GivesDefaults()
+    public void Load_MissingFile_GivesDefaults()
     {
-        var store = new JsonSettingsStore(FilePath);
+        var settings = _store.Load();
 
-        Assert.Equal(AppTheme.System, store.Current.Theme);
-        Assert.Null(store.Current.LastMergeFolder);
+        Assert.Equal(AppTheme.System, settings.Theme);
+        Assert.Null(settings.LastMergeFolder);
     }
 
     [Fact]
     public void Save_CreatesFolderAndPersistsSettings()
     {
-        var store = new JsonSettingsStore(FilePath);
-        store.Current.Theme = AppTheme.Dark;
-        store.Current.LastMergeFolder = @"C:\Docs";
+        _store.Save(new AppSettings { Theme = AppTheme.Dark, LastMergeFolder = @"C:\Docs" });
 
-        store.Save();
-        var reloaded = new JsonSettingsStore(FilePath);
+        var reloaded = _store.Load();
 
-        Assert.Equal(AppTheme.Dark, reloaded.Current.Theme);
-        Assert.Equal(@"C:\Docs", reloaded.Current.LastMergeFolder);
+        Assert.Equal(AppTheme.Dark, reloaded.Theme);
+        Assert.Equal(@"C:\Docs", reloaded.LastMergeFolder);
     }
 
     [Fact]
     public void Save_WritesThemeAsReadableText()
     {
-        var store = new JsonSettingsStore(FilePath);
-        store.Current.Theme = AppTheme.Dark;
+        _store.Save(new AppSettings { Theme = AppTheme.Dark });
 
-        store.Save();
+        Assert.Contains("\"Dark\"", _fileSystem.File.ReadAllText(FilePath));
+    }
 
-        Assert.Contains("\"Dark\"", File.ReadAllText(FilePath));
+    [Fact]
+    public void Save_ReplacesAnExistingFile()
+    {
+        _store.Save(new AppSettings { Theme = AppTheme.Dark });
+
+        _store.Save(new AppSettings { Theme = AppTheme.Light });
+
+        Assert.Equal(AppTheme.Light, _store.Load().Theme);
     }
 
     [Fact]
     public void Save_LeavesNoTemporaryFileBehind()
     {
-        var store = new JsonSettingsStore(FilePath);
+        _store.Save(new AppSettings());
 
-        store.Save();
-
-        Assert.Equal([FilePath], Directory.GetFiles(Path.GetDirectoryName(FilePath)!));
+        Assert.Equal([FilePath], _fileSystem.Directory.GetFiles(Path.GetDirectoryName(FilePath)!));
     }
 
     [Fact]
-    public void CorruptFile_GivesDefaults()
+    public void Load_CorruptFile_GivesDefaults()
     {
         WriteFile("{ this is not json");
 
-        var store = new JsonSettingsStore(FilePath);
-
-        Assert.Equal(AppTheme.System, store.Current.Theme);
+        Assert.Equal(AppTheme.System, _store.Load().Theme);
     }
 
     [Fact]
-    public void UnknownThemeValue_GivesDefaults()
+    public void Load_UnknownThemeValue_GivesDefaults()
     {
         WriteFile("""{ "Theme": "Purple" }""");
 
-        var store = new JsonSettingsStore(FilePath);
-
-        Assert.Equal(AppTheme.System, store.Current.Theme);
+        Assert.Equal(AppTheme.System, _store.Load().Theme);
     }
 
     [Fact]
-    public void EmptyFile_GivesDefaults()
+    public void Load_EmptyFile_GivesDefaults()
     {
         WriteFile("");
 
-        var store = new JsonSettingsStore(FilePath);
-
-        Assert.Equal(AppTheme.System, store.Current.Theme);
+        Assert.Equal(AppTheme.System, _store.Load().Theme);
     }
 
     [Fact]
-    public void UnknownProperties_AreIgnored_AndKnownOnesStillLoad()
+    public void Load_JsonNull_GivesDefaults()
+    {
+        WriteFile("null");
+
+        Assert.Equal(AppTheme.System, _store.Load().Theme);
+    }
+
+    [Fact]
+    public void Load_UnknownProperties_AreIgnored_AndKnownOnesStillLoad()
     {
         WriteFile("""{ "Theme": "Light", "SomethingFromANewerVersion": 42 }""");
 
-        var store = new JsonSettingsStore(FilePath);
-
-        Assert.Equal(AppTheme.Light, store.Current.Theme);
+        Assert.Equal(AppTheme.Light, _store.Load().Theme);
     }
 
     [Fact]
-    public void MissingProperties_FallBackToDefaults()
+    public void Load_MissingProperties_FallBackToDefaults()
     {
         WriteFile("""{ "LastMergeFolder": "C:\\Docs" }""");
 
-        var store = new JsonSettingsStore(FilePath);
+        var settings = _store.Load();
 
-        Assert.Equal(AppTheme.System, store.Current.Theme);
-        Assert.Equal(@"C:\Docs", store.Current.LastMergeFolder);
+        Assert.Equal(AppTheme.System, settings.Theme);
+        Assert.Equal(@"C:\Docs", settings.LastMergeFolder);
     }
 
     [Fact]
-    public void Save_WhenFolderCannotBeCreated_DoesNotThrow()
+    public void Save_WhenTheFileCannotBeWritten_DoesNotThrowAndKeepsTheOldFile()
     {
-        Directory.CreateDirectory(_folder);
-        var blocker = Path.Combine(_folder, "blocker");
-        File.WriteAllText(blocker, "a file where a folder is needed");
-        var store = new JsonSettingsStore(Path.Combine(blocker, "settings.json"));
+        _store.Save(new AppSettings { Theme = AppTheme.Dark });
+        // A read-only temporary file makes the next save fail.
+        _fileSystem.AddFile(FilePath + ".tmp", new MockFileData("") { Attributes = FileAttributes.ReadOnly });
 
-        var exception = Record.Exception(store.Save);
+        var exception = Record.Exception(() => _store.Save(new AppSettings { Theme = AppTheme.Light }));
 
         Assert.Null(exception);
+        Assert.Equal(AppTheme.Dark, _store.Load().Theme);
     }
 
     [Fact]
@@ -135,5 +132,16 @@ public class JsonSettingsStoreTests : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ExoPdf", "settings.json");
 
         Assert.Equal(expected, JsonSettingsStore.DefaultFilePath);
+    }
+
+    [Fact]
+    public void Constructing_DoesNotTouchTheFileSystem()
+    {
+        var fileSystem = new MockFileSystem();
+
+        _ = new JsonSettingsStore(fileSystem, FilePath);
+
+        Assert.Empty(fileSystem.AllFiles);
+        Assert.Empty(fileSystem.AllDirectories.Where(d => d.Contains("ExoPdf")));
     }
 }

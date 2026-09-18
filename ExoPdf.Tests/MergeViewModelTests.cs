@@ -1,5 +1,6 @@
 using ExoPdf.Core.Errors;
 using ExoPdf.Core.Models;
+using ExoPdf.Desktop.Models;
 using ExoPdf.Desktop.Services;
 using ExoPdf.Desktop.ViewModels;
 
@@ -13,7 +14,7 @@ public class MergeViewModelTests
     private readonly FakeMergeSourceFinder _finder = new();
     private readonly FakeFolderPicker _picker = new();
     private readonly FakeShellLauncher _shell = new();
-    private readonly FakeSettingsStore _settings = new();
+    private readonly FakeSettingsService _settings = new();
 
     private MergeViewModel CreateViewModel() => new(_merger, _finder, _picker, _shell, _settings);
 
@@ -76,7 +77,7 @@ public class MergeViewModelTests
         Assert.Equal("The PDF files in this folder could not be listed.", vm.EmptyStateText);
         Assert.False(vm.MergeCommand.CanExecute(null));
         Assert.Null(_settings.Current.LastMergeFolder);
-        Assert.Equal(0, _settings.SaveCount);
+        Assert.Equal(0, _settings.UpdateCount);
     }
 
     [Fact]
@@ -112,26 +113,26 @@ public class MergeViewModelTests
         vm.SelectFolderCommand.Execute(Folder);
 
         Assert.Equal(Folder, _settings.Current.LastMergeFolder);
-        Assert.Equal(1, _settings.SaveCount);
+        Assert.Equal(1, _settings.UpdateCount);
     }
 
     [Fact]
     public void NewViewModel_RestoresLastFolderIfItCanStillBeListed()
     {
         _finder.AddFolder(Folder, "a.pdf");
-        _settings.Current.LastMergeFolder = Folder;
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
 
         var vm = CreateViewModel();
 
         Assert.Equal(Folder, vm.SourceFolder);
         Assert.Single(vm.Files);
-        Assert.Equal(0, _settings.SaveCount);
+        Assert.Equal(0, _settings.UpdateCount);
     }
 
     [Fact]
     public void NewViewModel_DropsLastFolderThatNoLongerExists_WithoutAnError()
     {
-        _settings.Current.LastMergeFolder = Folder;
+        _settings.Current = new AppSettings { LastMergeFolder = Folder };
 
         var vm = CreateViewModel();
 

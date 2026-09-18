@@ -20,7 +20,7 @@ public partial class App : Application
 
         _services = BuildServices();
 
-        var settings = _services.GetRequiredService<ISettingsStore>();
+        var settings = _services.GetRequiredService<ISettingsService>();
         _services.GetRequiredService<IThemeService>().Apply(settings.Current.Theme);
 
         var window = new MainWindow { DataContext = _services.GetRequiredService<MainViewModel>() };
@@ -57,7 +57,9 @@ public partial class App : Application
         services.AddSingleton<IFolderPicker, FolderPicker>();
         services.AddSingleton<IShellLauncher, ShellLauncher>();
         services.AddSingleton<IThemeService, ThemeService>();
-        services.AddSingleton<ISettingsStore>(_ => new JsonSettingsStore(JsonSettingsStore.DefaultFilePath));
+        services.AddSingleton<ISettingsStore>(sp =>
+            new JsonSettingsStore(sp.GetRequiredService<IFileSystem>(), JsonSettingsStore.DefaultFilePath));
+        services.AddSingleton<ISettingsService, SettingsService>();
 
         // Each page shows up in the sidebar. To add an operation: register its
         // ViewModel here and map it to its View in App.xaml.
