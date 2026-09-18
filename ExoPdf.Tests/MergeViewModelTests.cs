@@ -16,7 +16,8 @@ public class MergeViewModelTests
     private readonly FakeShellLauncher _shell = new();
     private readonly FakeSettingsService _settings = new();
 
-    private MergeViewModel CreateViewModel() => new(_merger, _finder, _picker, _shell, _settings);
+    private MergeViewModel CreateViewModel(IUiThread? uiThread = null) =>
+        new(_merger, _finder, _picker, _shell, _settings, uiThread ?? new ImmediateUiThread());
 
     [Fact]
     public void NewViewModel_HasNoFolderAndCannotMerge()
@@ -595,6 +596,148 @@ public class MergeViewModelTests
 
         _merger.Gate.Set();
         await running;
+    }
+
+    [Fact]
+    public async Task Merge_WhenSaving_ShowsASavingStateAndCannotBeCancelled()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 1, "a.pdf"));
+        _merger.ProgressToReport.Add(new MergeProgress(1, 1, "", MergeStage.Saving));
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        Assert.True(_merger.Reported.Wait(TimeSpan.FromSeconds(5)));
+
+        Assert.True(vm.IsSaving);
+        Assert.Equal("Saving merged file…", vm.ProgressText);
+        Assert.Equal(vm.TotalFiles, vm.FilesCompleted);
+        Assert.True(vm.IsBusy);
+        Assert.False(vm.CancelCommand.CanExecute(null));
+
+        _merger.Gate.Set();
+        await running;
+
+        Assert.False(vm.IsSaving);
+        Assert.False(vm.IsBusy);
+    }
+
+    [Fact]
+    public async Task Merge_BeforeSaving_IsNotSavingAndCanBeCancelled()
+    {
+        _finder.AddFolder(Folder, "a.pdf", "b.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 2, "a.pdf"));
+        _merger.Gate = new ManualResetEventSlim(false);
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        Assert.True(_merger.Reported.Wait(TimeSpan.FromSeconds(5)));
+
+        Assert.False(vm.IsSaving);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+
+        _merger.Gate.Set();
+        await running;
+    }
+
+    [Fact]
+    public async Task Merge_AfterASaveThatFailed_StartsTheNextOneNotSaving()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 1, "", MergeStage.Saving));
+        _merger.Exception = new OutputWriteException(Folder, new IOException("disk full"));
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.MergeCommand.ExecuteAsync(null);
+        Assert.False(vm.IsSaving);
+
+        _merger.ProgressToReport.Clear();
+        _merger.Exception = null;
+        _merger.Gate = new ManualResetEventSlim(false);
+        var running = vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsSaving);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+
+        _merger.Gate.Set();
+        await running;
+    }
+
+    // --- threading ----------------------------------------------------------
+
+    [Fact]
+    public async Task Merge_RunsOnAnotherThreadThanTheCaller()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        var callerThread = Environment.CurrentManagedThreadId;
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.NotEqual(0, _merger.LastThreadId);
+        Assert.NotEqual(callerThread, _merger.LastThreadId);
+    }
+
+    [Fact]
+    public async Task ListingAFolder_RunsOnAnotherThreadThanTheCaller()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var vm = CreateViewModel();
+
+        var callerThread = Environment.CurrentManagedThreadId;
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        Assert.NotEqual(0, _finder.LastThreadId);
+        Assert.NotEqual(callerThread, _finder.LastThreadId);
+    }
+
+    [Fact]
+    public async Task Progress_ChangesTheViewModelOnlyThroughTheUiThread()
+    {
+        _finder.AddFolder(Folder, "a.pdf", "b.pdf", "c.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 3, "a.pdf"));
+        _merger.ProgressToReport.Add(new MergeProgress(2, 3, "b.pdf"));
+        _merger.Gate = new ManualResetEventSlim(false);
+        var uiThread = new QueuedUiThread();
+        var vm = CreateViewModel(uiThread);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        var running = vm.MergeCommand.ExecuteAsync(null);
+        Assert.True(_merger.Reported.Wait(TimeSpan.FromSeconds(5)));
+
+        // The merge thread has reported, but the UI thread has not run yet.
+        Assert.Equal(2, uiThread.Pending);
+        Assert.Equal(0, vm.FilesCompleted);
+        Assert.Equal("Starting…", vm.ProgressText);
+
+        uiThread.RunAll();
+
+        Assert.Equal(2, vm.FilesCompleted);
+        Assert.Equal("Merged 2 of 3: b.pdf", vm.ProgressText);
+
+        _merger.Gate.Set();
+        await running;
+    }
+
+    [Fact]
+    public async Task Progress_ArrivingAfterTheMergeEnded_IsIgnored()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        _merger.ProgressToReport.Add(new MergeProgress(1, 1, "", MergeStage.Saving));
+        var uiThread = new QueuedUiThread();
+        var vm = CreateViewModel(uiThread);
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        uiThread.RunAll();
+
+        Assert.False(vm.IsSaving);
+        Assert.False(vm.IsBusy);
+        Assert.Equal(0, vm.FilesCompleted);
     }
 
     // --- cancellation -------------------------------------------------------

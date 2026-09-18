@@ -43,6 +43,50 @@ internal class FakeShellLauncher : IShellLauncher
     }
 }
 
+/// <summary>Runs posted actions immediately on the posting thread, so tests see state changes in order and without waiting.</summary>
+internal class ImmediateUiThread : IUiThread
+{
+    public void Post(Action action) => action();
+}
+
+/// <summary>Holds posted actions until <see cref="RunAll"/>, like a UI thread that is busy. Safe to post from any thread.</summary>
+internal class QueuedUiThread : IUiThread
+{
+    private readonly Queue<Action> _queue = new();
+
+    public int Pending
+    {
+        get
+        {
+            lock (_queue)
+                return _queue.Count;
+        }
+    }
+
+    public void Post(Action action)
+    {
+        lock (_queue)
+            _queue.Enqueue(action);
+    }
+
+    /// <summary>Runs everything posted so far, in order, on the calling thread.</summary>
+    public void RunAll()
+    {
+        while (true)
+        {
+            Action action;
+            lock (_queue)
+            {
+                if (_queue.Count == 0)
+                    return;
+                action = _queue.Dequeue();
+            }
+
+            action();
+        }
+    }
+}
+
 internal class FakeThemeService : IThemeService
 {
     public List<AppTheme> Applied { get; } = [];
@@ -120,9 +164,13 @@ internal class FakeMergeSourceFinder : IMergeSourceFinder
         return gate;
     }
 
+    /// <summary>The managed thread id the last <see cref="Find"/> call ran on.</summary>
+    public int LastThreadId { get; private set; }
+
     public IReadOnlyList<string> Find(string folderPath)
     {
         Interlocked.Increment(ref _findCount);
+        LastThreadId = Environment.CurrentManagedThreadId;
 
         if (_gates.TryGetValue(folderPath, out var gate))
             gate.Wait();
@@ -153,6 +201,9 @@ internal class FakePdfMerger : IPdfMerger
 
     public CancellationToken LastToken { get; private set; }
 
+    /// <summary>The managed thread id the last <see cref="Merge"/> call ran on.</summary>
+    public int LastThreadId { get; private set; }
+
     /// <summary>Reports made through the progress sink before the merge waits at the gate.</summary>
     public List<MergeProgress> ProgressToReport { get; } = [];
 
@@ -164,6 +215,7 @@ internal class FakePdfMerger : IPdfMerger
         Calls.Add(options);
         LastProgress = progress;
         LastToken = cancellationToken;
+        LastThreadId = Environment.CurrentManagedThreadId;
 
         foreach (var report in ProgressToReport)
             progress?.Report(report);

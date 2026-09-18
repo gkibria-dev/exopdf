@@ -35,7 +35,9 @@ public sealed class PdfMerger(IFileSystem fileSystem, IMergeSourceFinder finder,
                     progress?.Report(new MergeProgress(i + 1, files.Count, fileSystem.Path.GetFileName(files[i])));
                 }
 
+                // The last point at which the merge can still be cancelled: saving cannot be.
                 cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(new MergeProgress(files.Count, files.Count, "", MergeStage.Saving));
                 Write(output, tempFilePath, outputFilePath, options.SourceFolderPath);
             }
 

@@ -75,6 +75,7 @@ public partial class App : Application
         services.AddSingleton<IPdfMerger, PdfMerger>();
         services.AddSingleton<IFolderPicker, FolderPicker>();
         services.AddSingleton<IShellLauncher, ShellLauncher>();
+        services.AddSingleton<IUiThread, WpfUiThread>();
         services.AddSingleton<IThemeService, ThemeService>();
         services.AddSingleton<ISettingsStore>(sp =>
             new JsonSettingsStore(sp.GetRequiredService<IFileSystem>(), JsonSettingsStore.DefaultFilePath));

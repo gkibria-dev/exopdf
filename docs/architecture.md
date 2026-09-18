@@ -91,7 +91,9 @@ ExoPdf.Core/
   cancellation leaves no partial file. Failing to delete the temporary file never
   hides the original error.
 - Progress is reported after each file; cancellation is checked before each file
-  and before writing.
+  and before writing. Once the last check has passed, one more report with
+  `MergeStage.Saving` is sent, then the file is written. Saving cannot be cancelled,
+  so no cancellation is possible after that report.
 
 **Packages:** `PDFsharp` (MIT, see [ADR-002](adr/002-pdfsharp-library.md)),
 `System.IO.Abstractions`.
@@ -151,6 +153,7 @@ ExoPdf.Desktop/
 ├── Services/              interfaces free of WPF types, plus implementations
 │   ├── IFolderPicker      folder dialog
 │   ├── IShellLauncher     open a file, show it in Explorer (throws ShellLaunchException)
+│   ├── IUiThread          post work to the UI thread (WpfUiThread: Dispatcher.BeginInvoke)
 │   ├── IThemeService      applies light/dark/system to the window and its title bar
 │   │                      (ThemeService: the only place using ThemeMode and DWM)
 │   ├── TitleBarTheme      whether the title bar is dark for a theme (pure, tested)
@@ -183,9 +186,20 @@ version number and a listing that finishes after a newer one has started is igno
 so the newest choice wins. (The file-system call cannot be cancelled; it is
 abandoned.) A folder is remembered only after it was listed successfully.
 The merge is given exactly that list (`MergeOptions.Files`), so it merges what the
-user was shown. Merging runs on a background thread with a `Progress`/`CancellationToken`: the view
-shows "Merged n of N", a determinate bar and a Cancel button. Cancelling shows a
-neutral notice, not an error. A successful merge produces a `MergeResultViewModel`.
+user was shown. Merging runs on a background thread (`Task.Run`, because Core and the
+file-system and PDF libraries are synchronous) with a progress sink and a
+`CancellationToken`: the view shows "Merged n of N", a determinate bar and a Cancel
+button. Cancelling shows a neutral notice, not an error. When the last file is merged
+the view switches to "Saving merged file…" with an indeterminate bar and Cancel disabled
+(`IsSaving`). A successful merge produces a `MergeResultViewModel`.
+
+**Threads and progress.** Reports arrive on the merge thread (`DirectProgress<T>`) and
+the ViewModel posts each one to the UI thread through `IUiThread` before it changes any
+state. WPF marshals `PropertyChanged` for bindings but not `CanExecuteChanged`, so state
+that affects a command, such as `IsSaving`, must not be set from the merge thread. Posts
+run in order and are all queued before the merge's completion, and `OnProgress` drops a
+report that arrives after the merge ended. Tests use `ImmediateUiThread` or a
+`QueuedUiThread` that runs posted work on demand.
 
 **Errors.** ViewModels show `ExoPdfException` messages inline. Anything else reaches
 `App.DispatcherUnhandledException`, which shows a generic dialog.

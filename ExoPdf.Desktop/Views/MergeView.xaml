@@ -169,7 +169,9 @@
                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Text="{Binding ProgressText}" Style="{StaticResource SectionLabel}" Margin="0,0,0,6"
                            TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite" />
+                <!-- Determinate per file, then indeterminate while the merged file is written. -->
                 <ProgressBar Minimum="0" Maximum="{Binding TotalFiles}" Value="{Binding FilesCompleted}" Height="4"
+                             IsIndeterminate="{Binding IsSaving}"
                              AutomationProperties.Name="Merge progress" />
             </StackPanel>
         </DockPanel>

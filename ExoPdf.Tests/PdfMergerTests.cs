@@ -288,8 +288,45 @@ public class PdfMergerTests
         _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress);
 
         Assert.Equal(
-            [new MergeProgress(1, 3, "a.pdf"), new MergeProgress(2, 3, "b.pdf"), new MergeProgress(3, 3, "c.pdf")],
+            [
+                new MergeProgress(1, 3, "a.pdf"),
+                new MergeProgress(2, 3, "b.pdf"),
+                new MergeProgress(3, 3, "c.pdf"),
+                new MergeProgress(3, 3, "", MergeStage.Saving)
+            ],
             progress.Reports);
+    }
+
+    [Fact]
+    public void Merge_ReportsSavingOnce_AfterEveryFileAndBeforeTheOutputExists()
+    {
+        AddPdf("a.pdf", 1);
+        AddPdf("b.pdf", 1);
+        var filesWhenSavingStarted = new List<string>();
+        var progress = new RecordingProgress<MergeProgress>(report =>
+        {
+            if (report.Stage == MergeStage.Saving)
+                filesWhenSavingStarted.AddRange(_fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName)!);
+        });
+
+        _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress);
+
+        Assert.Single(progress.Reports, report => report.Stage == MergeStage.Saving);
+        Assert.Equal(MergeStage.Saving, progress.Reports[^1].Stage);
+        Assert.Equal(["a.pdf", "b.pdf"], filesWhenSavingStarted);
+    }
+
+    [Fact]
+    public void Merge_FailingOnAFile_NeverReportsSaving()
+    {
+        AddPdf("a.pdf", 1);
+        _fileSystem.AddFile(Path.Combine(Folder, "b.pdf"), new MockFileData("not a pdf"));
+        var progress = new RecordingProgress<MergeProgress>();
+
+        Assert.Throws<PdfUnreadableException>(
+            () => _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress));
+
+        Assert.DoesNotContain(progress.Reports, report => report.Stage == MergeStage.Saving);
     }
 
     [Fact]
@@ -346,6 +383,7 @@ public class PdfMergerTests
             () => _merger.Merge(new MergeOptions { SourceFolderPath = Folder }, progress, cts.Token));
 
         Assert.Equal(["a.pdf"], _fileSystem.Directory.GetFiles(Folder).Select(Path.GetFileName));
+        Assert.DoesNotContain(progress.Reports, report => report.Stage == MergeStage.Saving);
     }
 
     // --- explicit file lists ------------------------------------------------
