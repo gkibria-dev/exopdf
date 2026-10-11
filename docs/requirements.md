@@ -122,7 +122,7 @@ DUI-17 and DUI-18 can be added without redesigning the view.
 | ID | Priority | Requirement |
 |---|---|---|
 | DUI-20 | Must | The Settings page offers a theme choice: Follow system (default), Light, Dark. The change applies immediately. |
-| DUI-21 | Must | The application remembers the last folder used in Merge and offers it again on the next launch. |
+| DUI-21 | Must | The application remembers recently used Merge folders (most recent first, capped at 5) and offers them in a Recents list in the Merge view. No folder is read automatically on launch; the user picks one explicitly. Picking a folder that can no longer be listed shows the usual error (DUI-15) and removes it from the list. |
 | DUI-22 | Must | Settings persist between launches in `%AppData%\ExoPdf\settings.json`. A missing or corrupt file falls back to defaults without an error. |
 | DUI-23 | Should | The settings mechanism accepts new settings without a redesign, so future operations can add their own. |
 
