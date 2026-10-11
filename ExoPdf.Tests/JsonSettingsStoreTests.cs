@@ -21,18 +21,18 @@ public class JsonSettingsStoreTests
         var settings = _store.Load();
 
         Assert.Equal(AppTheme.System, settings.Theme);
-        Assert.Null(settings.LastMergeFolder);
+        Assert.Empty(settings.RecentMergeFolders);
     }
 
     [Fact]
     public void Save_CreatesFolderAndPersistsSettings()
     {
-        _store.Save(new AppSettings { Theme = AppTheme.Dark, LastMergeFolder = @"C:\Docs" });
+        _store.Save(new AppSettings { Theme = AppTheme.Dark, RecentMergeFolders = [@"C:\Docs"] });
 
         var reloaded = _store.Load();
 
         Assert.Equal(AppTheme.Dark, reloaded.Theme);
-        Assert.Equal(@"C:\Docs", reloaded.LastMergeFolder);
+        Assert.Equal([@"C:\Docs"], reloaded.RecentMergeFolders);
     }
 
     [Fact]
@@ -104,12 +104,12 @@ public class JsonSettingsStoreTests
     [Fact]
     public void Load_MissingProperties_FallBackToDefaults()
     {
-        WriteFile("""{ "LastMergeFolder": "C:\\Docs" }""");
+        WriteFile("""{ "RecentMergeFolders": ["C:\\Docs"] }""");
 
         var settings = _store.Load();
 
         Assert.Equal(AppTheme.System, settings.Theme);
-        Assert.Equal(@"C:\Docs", settings.LastMergeFolder);
+        Assert.Equal([@"C:\Docs"], settings.RecentMergeFolders);
     }
 
     [Fact]

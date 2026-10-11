@@ -37,8 +37,8 @@ public partial class App : Application
 
         window.Show();
 
-        // Start-up work such as listing the last folder runs after the window is visible,
-        // so a slow disk or network share cannot delay it.
+        // Start-up work runs after the window is visible, so slow page initialization
+        // cannot delay it.
         await mainViewModel.InitializeAsync();
     }
 

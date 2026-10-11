@@ -77,7 +77,7 @@ public class MergeViewModelTests
         Assert.Empty(vm.Files);
         Assert.Equal("The PDF files in this folder could not be listed.", vm.EmptyStateText);
         Assert.False(vm.MergeCommand.CanExecute(null));
-        Assert.Null(_settings.Current.LastMergeFolder);
+        Assert.Empty(_settings.Current.RecentMergeFolders);
         Assert.Equal(0, _settings.UpdateCount);
     }
 
@@ -106,162 +106,110 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public async Task SelectFolder_RemembersFolderInSettings()
+    public async Task SelectFolder_DoesNotRememberTheFolder_OnlyMergingDoes()
     {
         _finder.AddFolder(Folder, "a.pdf");
         var vm = CreateViewModel();
 
         await vm.SelectFolderCommand.ExecuteAsync(Folder);
 
-        Assert.Equal(Folder, _settings.Current.LastMergeFolder);
-        Assert.Equal(1, _settings.UpdateCount);
+        Assert.Empty(_settings.Current.RecentMergeFolders);
+        Assert.Equal(0, _settings.UpdateCount);
     }
 
-    // --- start-up restore ---------------------------------------------------
+    // --- recent folders -------------------------------------------------------
 
     [Fact]
     public void NewViewModel_DoesNotTouchTheFileSystemUntilInitialized()
     {
         _finder.AddFolder(Folder, "a.pdf");
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        _settings.Current = new AppSettings { RecentMergeFolders = [Folder] };
 
         var vm = CreateViewModel();
 
         Assert.Equal(0, _finder.FindCount);
         Assert.False(vm.HasFolder);
+        Assert.Empty(vm.RecentFolders);
     }
 
     [Fact]
-    public async Task Initialize_RestoresLastFolderIfItCanStillBeListed()
+    public async Task Initialize_PopulatesRecentFoldersFromSettings_WithoutTouchingTheFileSystem()
     {
-        _finder.AddFolder(Folder, "a.pdf");
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        _settings.Current = new AppSettings { RecentMergeFolders = [Folder, @"C:\docs\Other"] };
         var vm = CreateViewModel();
 
         await vm.InitializeAsync();
 
+        Assert.Equal([Folder, @"C:\docs\Other"], vm.RecentFolders);
+        Assert.True(vm.HasRecentFolders);
+        Assert.False(vm.HasFolder);
+        Assert.Equal(0, _finder.FindCount);
+    }
+
+    [Fact]
+    public async Task Initialize_WithNoRecentFolders_LeavesTheListEmpty()
+    {
+        var vm = CreateViewModel();
+
+        await vm.InitializeAsync();
+
+        Assert.False(vm.HasRecentFolders);
+        Assert.Empty(vm.RecentFolders);
+    }
+
+    [Fact]
+    public async Task OpenRecentFolder_StillListable_LoadsItWithoutChangingRecents()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(Folder, "a.pdf");
+        _settings.Current = new AppSettings { RecentMergeFolders = [other, Folder] };
+        var vm = CreateViewModel();
+        await vm.InitializeAsync();
+
+        await vm.OpenRecentFolderCommand.ExecuteAsync(Folder);
+
         Assert.Equal(Folder, vm.SourceFolder);
         Assert.Single(vm.Files);
+        Assert.Equal([other, Folder], _settings.Current.RecentMergeFolders);
         Assert.Equal(0, _settings.UpdateCount);
     }
 
     [Fact]
-    public async Task Initialize_DropsLastFolderThatNoLongerExists_WithoutAnError()
+    public async Task OpenRecentFolder_NoLongerListable_ShowsTheErrorAndRemovesItFromRecents()
     {
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
+        var other = @"C:\docs\Other";
+        _settings.Current = new AppSettings { RecentMergeFolders = [Folder, other] };
         var vm = CreateViewModel();
-
         await vm.InitializeAsync();
 
-        Assert.False(vm.HasFolder);
-        Assert.False(vm.HasError);
-        Assert.False(vm.IsLoadingFiles);
-        Assert.Equal("Choose a folder to see the PDFs that will be merged.", vm.EmptyStateText);
-    }
+        await vm.OpenRecentFolderCommand.ExecuteAsync(Folder);
 
-    [Fact]
-    public async Task Initialize_AnUnusableLastFolder_NeverShowsAnError_NotEvenBriefly()
-    {
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
-        var vm = CreateViewModel();
-        var errorAnnouncements = new List<string?>();
-        vm.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(MergeViewModel.HasError) or nameof(MergeViewModel.ErrorMessage))
-                errorAnnouncements.Add(e.PropertyName);
-        };
-
-        await vm.InitializeAsync();
-
-        Assert.Empty(errorAnnouncements);
-        Assert.False(vm.HasFolder);
-    }
-
-    [Fact]
-    public async Task Initialize_ThenTheUserPicksTheSameBrokenFolder_TheUserStillGetsTheError()
-    {
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
-        var gate = _finder.Hold(Folder); // not registered: both listings fail once released
-        var vm = CreateViewModel();
-        var starting = vm.InitializeAsync();
-
-        var picking = vm.SelectFolderCommand.ExecuteAsync(Folder);
-        gate.Set();
-        await picking;
-        await starting;
-
-        Assert.Equal(Folder, vm.SourceFolder);
         Assert.True(vm.HasError);
-        Assert.False(vm.IsLoadingFiles);
+        Assert.Equal([other], _settings.Current.RecentMergeFolders);
+        Assert.Equal([other], vm.RecentFolders);
     }
 
     [Fact]
-    public async Task Initialize_WithNoLastFolder_DoesNothing()
+    public async Task OpenRecentFolder_SupersededByANewerPick_LeavesTheStaleOneInRecents()
     {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(Folder, "a.pdf");
+        _finder.AddFolder(other, "b.pdf");
+        var gate = _finder.Hold(Folder);
+        _settings.Current = new AppSettings { RecentMergeFolders = [other, Folder] };
         var vm = CreateViewModel();
-
         await vm.InitializeAsync();
 
-        Assert.False(vm.HasFolder);
-        Assert.Equal(0, _finder.FindCount);
-    }
-
-    [Fact]
-    public async Task Initialize_ASlowLastFolder_ShowsLoadingWhileTheWindowIsAlreadyUsable()
-    {
-        _finder.AddFolder(Folder, "a.pdf");
-        var gate = _finder.Hold(Folder);
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
-        var vm = CreateViewModel();
-
-        var starting = vm.InitializeAsync();
-
-        Assert.False(starting.IsCompleted);
-        Assert.True(vm.IsLoadingFiles);
-        Assert.True(vm.BrowseCommand.CanExecute(null));
-
+        var openingFolder = vm.OpenRecentFolderCommand.ExecuteAsync(Folder);
+        await vm.OpenRecentFolderCommand.ExecuteAsync(other);
         gate.Set();
-        await starting;
+        await openingFolder;
 
-        Assert.Single(vm.Files);
-        Assert.False(vm.IsLoadingFiles);
-    }
-
-    [Fact]
-    public async Task Initialize_TheUserPicksAnotherFolderMeanwhile_KeepsTheUsersChoice()
-    {
-        var other = @"C:\docs\Other";
-        _finder.AddFolder(Folder, "a.pdf");
-        _finder.AddFolder(other, "b.pdf");
-        var gate = _finder.Hold(Folder);
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
-        var vm = CreateViewModel();
-        var starting = vm.InitializeAsync();
-
-        await vm.SelectFolderCommand.ExecuteAsync(other);
-        gate.Set();
-        await starting;
-
+        // Folder's listing arrived late but succeeded (not Failed); a Stale outcome must
+        // not be mistaken for one and must not drop it from Recents.
         Assert.Equal(other, vm.SourceFolder);
-        Assert.Equal(["b.pdf"], vm.Files.Select(f => f.Name));
-    }
-
-    [Fact]
-    public async Task Initialize_TheUserPicksAnotherFolderMeanwhile_AndTheOldOneIsGone_DoesNotDropTheNewChoice()
-    {
-        var other = @"C:\docs\Other";
-        _finder.AddFolder(other, "b.pdf");
-        var gate = _finder.Hold(Folder); // Folder is not registered: it will fail once released
-        _settings.Current = new AppSettings { LastMergeFolder = Folder };
-        var vm = CreateViewModel();
-        var starting = vm.InitializeAsync();
-
-        await vm.SelectFolderCommand.ExecuteAsync(other);
-        gate.Set();
-        await starting;
-
-        Assert.Equal(other, vm.SourceFolder);
-        Assert.False(vm.HasError);
+        Assert.Equal([other, Folder], _settings.Current.RecentMergeFolders);
+        Assert.Equal(0, _settings.UpdateCount);
     }
 
     // --- loading ------------------------------------------------------------
@@ -292,22 +240,6 @@ public class MergeViewModelTests
     }
 
     [Fact]
-    public async Task SelectFolder_WhileListing_DoesNotSaveTheFolderUntilItIsListed()
-    {
-        _finder.AddFolder(Folder, "a.pdf");
-        var gate = _finder.Hold(Folder);
-        var vm = CreateViewModel();
-
-        var selecting = vm.SelectFolderCommand.ExecuteAsync(Folder);
-        Assert.Equal(0, _settings.UpdateCount);
-
-        gate.Set();
-        await selecting;
-
-        Assert.Equal(1, _settings.UpdateCount);
-    }
-
-    [Fact]
     public async Task SelectFolder_ANewerChoiceWins_AndTheSlowOldListingIsIgnored()
     {
         var other = @"C:\docs\Other";
@@ -324,8 +256,7 @@ public class MergeViewModelTests
         Assert.Equal(other, vm.SourceFolder);
         Assert.Equal(["fast.pdf"], vm.Files.Select(f => f.Name));
         Assert.False(vm.IsLoadingFiles);
-        Assert.Equal(other, _settings.Current.LastMergeFolder);
-        Assert.Equal(1, _settings.UpdateCount);
+        Assert.Equal(0, _settings.UpdateCount);
     }
 
     [Fact]
@@ -432,6 +363,68 @@ public class MergeViewModelTests
     }
 
     [Fact]
+    public async Task Merge_Success_RemembersTheFolderInRecents()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.Equal([Folder], _settings.Current.RecentMergeFolders);
+        Assert.Equal([Folder], vm.RecentFolders);
+    }
+
+    [Fact]
+    public async Task Merge_Success_RememberingAnExistingFolderAgain_MovesItToTheFront()
+    {
+        var other = @"C:\docs\Other";
+        _finder.AddFolder(Folder, "a.pdf");
+        _finder.AddFolder(other, "b.pdf");
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.MergeCommand.ExecuteAsync(null);
+        await vm.SelectFolderCommand.ExecuteAsync(other);
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.Equal([Folder, other], _settings.Current.RecentMergeFolders);
+    }
+
+    [Fact]
+    public async Task Merge_Success_RecentFoldersBeyondTheCap_AreDropped()
+    {
+        var vm = CreateViewModel();
+        for (var i = 0; i < 6; i++)
+        {
+            var folder = $@"C:\docs\Folder{i}";
+            _finder.AddFolder(folder, "a.pdf");
+            await vm.SelectFolderCommand.ExecuteAsync(folder);
+            await vm.MergeCommand.ExecuteAsync(null);
+        }
+
+        Assert.Equal(5, _settings.Current.RecentMergeFolders.Count);
+        Assert.Equal(@"C:\docs\Folder5", _settings.Current.RecentMergeFolders[0]);
+        Assert.DoesNotContain(@"C:\docs\Folder0", _settings.Current.RecentMergeFolders);
+    }
+
+    [Fact]
+    public async Task Merge_Success_AlreadyAtTheFrontOfRecents_DoesNotRewriteSettings()
+    {
+        _finder.AddFolder(Folder, "a.pdf");
+        var vm = CreateViewModel();
+        await vm.SelectFolderCommand.ExecuteAsync(Folder);
+        await vm.MergeCommand.ExecuteAsync(null);
+        var updatesAfterFirstMerge = _settings.UpdateCount;
+
+        await vm.MergeCommand.ExecuteAsync(null);
+
+        Assert.Equal(updatesAfterFirstMerge, _settings.UpdateCount);
+    }
+
+    [Fact]
     public async Task Merge_MergesExactlyTheFilesShown_InTheShownOrder()
     {
         _finder.AddFolder(Folder, "b.pdf", "a.pdf");
@@ -497,6 +490,7 @@ public class MergeViewModelTests
         Assert.Equal("Cannot read \"a.pdf\": bad header", vm.ErrorMessage);
         Assert.Null(vm.Result);
         Assert.False(vm.IsBusy);
+        Assert.Empty(_settings.Current.RecentMergeFolders);
     }
 
     [Fact]
