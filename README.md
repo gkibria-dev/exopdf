@@ -38,6 +38,19 @@ Run the WPF desktop application:
 dotnet run --project ExoPdf.Desktop
 ```
 
+To merge PDFs:
+
+1. Open the **Merge** page (selected by default) and choose a source folder — click
+   **Browse…**, or drag a folder onto the window.
+2. Review the file list; PDFs merge in file-name order (A–Z).
+3. Click **Merge**. A progress bar tracks the merge, then the save; **Cancel** stops it
+   before saving starts.
+4. On success, use **Open file** or **Show in folder** to find the result.
+
+The folder icon next to Browse opens **Recents** — up to 5 folders you've merged
+before, most recent first. It only lists folders you've actually merged, and drops one
+automatically if it can no longer be found.
+
 ## License
 
 [MIT](LICENSE)
