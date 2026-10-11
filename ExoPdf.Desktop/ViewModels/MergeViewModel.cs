@@ -10,6 +10,12 @@ namespace ExoPdf.Desktop.ViewModels;
 
 public partial class MergeViewModel : PageViewModel
 {
+    private const int MaxRecentFolders = 5;
+
+    // Stale means a newer pick already took over before this one finished; it is not a
+    // failure of the folder itself, so Recents must not be touched because of it.
+    private enum LoadOutcome { Loaded, Stale, Failed }
+
     private readonly IPdfMerger _merger;
     private readonly IMergeSourceFinder _finder;
     private readonly IFolderPicker _folderPicker;
@@ -89,20 +95,22 @@ public partial class MergeViewModel : PageViewModel
     }
 
     /// <summary>
-    /// Offers the last used folder again. Runs after the window is shown, so a slow
-    /// folder cannot delay startup.
+    /// Populates the Recents list from settings. Touches only settings, never the file
+    /// system, so a folder that is gone or unreachable cannot affect start-up.
     /// </summary>
-    public override async Task InitializeAsync()
+    public override Task InitializeAsync()
     {
-        var lastFolder = _settings.Current.LastMergeFolder;
-        if (string.IsNullOrEmpty(lastFolder))
-            return;
-
-        await LoadFolderAsync(lastFolder, restoring: true);
+        RefreshRecentFolders();
+        return Task.CompletedTask;
     }
 
     /// <summary>The PDFs that will be merged, in merge order.</summary>
     public ObservableCollection<MergeFileItem> Files { get; } = [];
+
+    /// <summary>Folders used in Merge before, most recent first. Pick one to reopen it.</summary>
+    public ObservableCollection<string> RecentFolders { get; } = [];
+
+    public bool HasRecentFolders => RecentFolders.Count > 0;
 
     public bool HasFolder => !string.IsNullOrEmpty(SourceFolder);
 
@@ -145,9 +153,56 @@ public partial class MergeViewModel : PageViewModel
         if (string.IsNullOrWhiteSpace(path))
             return;
 
-        // Only a folder that could be listed is worth offering again next time.
-        if (await LoadFolderAsync(path))
-            _settings.Update(s => s with { LastMergeFolder = path });
+        await LoadFolderAsync(path);
+    }
+
+    /// <summary>Reopens a folder the user picked from Recents.</summary>
+    [RelayCommand(CanExecute = nameof(CanChangeFolder), AllowConcurrentExecutions = true)]
+    private async Task OpenRecentFolderAsync(string path)
+    {
+        // Loaded: left as is, merging is what moves a folder to the front of Recents.
+        // Stale: a newer pick already took over; the folder itself was never shown to be
+        // bad, so it must be left in Recents too.
+        if (await LoadFolderAsync(path) == LoadOutcome.Failed)
+            ForgetFolder(path);
+    }
+
+    /// <summary>Moves <paramref name="path"/> to the front of Recents, capped and de-duplicated.</summary>
+    private void RememberFolder(string path)
+    {
+        var updated = new[] { path }
+            .Concat(_settings.Current.RecentMergeFolders.Where(f => !string.Equals(f, path, StringComparison.OrdinalIgnoreCase)))
+            .Take(MaxRecentFolders)
+            .ToList();
+
+        // A new List<string> never equals the old one by SettingsService's reference-based
+        // no-op check, so skip the update (and the save it would trigger) here instead.
+        if (!updated.SequenceEqual(_settings.Current.RecentMergeFolders))
+            _settings.Update(s => s with { RecentMergeFolders = updated });
+
+        RefreshRecentFolders();
+    }
+
+    /// <summary>Removes a folder from Recents, for example one that can no longer be listed.</summary>
+    private void ForgetFolder(string path)
+    {
+        var updated = _settings.Current.RecentMergeFolders
+            .Where(f => !string.Equals(f, path, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (!updated.SequenceEqual(_settings.Current.RecentMergeFolders))
+            _settings.Update(s => s with { RecentMergeFolders = updated });
+
+        RefreshRecentFolders();
+    }
+
+    private void RefreshRecentFolders()
+    {
+        RecentFolders.Clear();
+        foreach (var folder in _settings.Current.RecentMergeFolders)
+            RecentFolders.Add(folder);
+
+        OnPropertyChanged(nameof(HasRecentFolders));
     }
 
     [RelayCommand(CanExecute = nameof(CanMerge))]
@@ -180,6 +235,10 @@ public partial class MergeViewModel : PageViewModel
             var progress = new DirectProgress<MergeProgress>(report => _uiThread.Post(() => OnProgress(report)));
             var result = await Task.Run(() => _merger.Merge(options, progress, cancellation.Token), cancellation.Token);
             Result = new MergeResultViewModel(result, _shell);
+
+            // A folder only earns a place in Recents once it has actually been merged,
+            // not just browsed to.
+            RememberFolder(options.SourceFolderPath);
         }
         catch (OperationCanceledException)
         {
@@ -229,13 +288,9 @@ public partial class MergeViewModel : PageViewModel
 
     /// <summary>
     /// Makes <paramref name="folder"/> the source folder and lists its files off the UI
-    /// thread. Returns true if the listing succeeded and is still the newest one.
+    /// thread.
     /// </summary>
-    /// <param name="restoring">
-    /// True when offering the last used folder at start-up: if it can no longer be listed
-    /// it is dropped quietly, with no error shown, because the user did not just choose it.
-    /// </param>
-    private async Task<bool> LoadFolderAsync(string folder, bool restoring = false)
+    private async Task<LoadOutcome> LoadFolderAsync(string folder)
     {
         var version = ++_listingVersion;
 
@@ -252,22 +307,18 @@ public partial class MergeViewModel : PageViewModel
 
             // A newer listing has started; it owns the state now.
             if (version != _listingVersion)
-                return false;
+                return LoadOutcome.Stale;
 
             SetFiles(found);
-            return true;
+            return LoadOutcome.Loaded;
         }
         catch (ExoPdfException ex)
         {
             if (version != _listingVersion)
-                return false;
+                return LoadOutcome.Stale;
 
-            if (restoring)
-                SourceFolder = null;
-            else
-                ErrorMessage = ex.Message;
-
-            return false;
+            ErrorMessage = ex.Message;
+            return LoadOutcome.Failed;
         }
         finally
         {

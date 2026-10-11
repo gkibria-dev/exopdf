@@ -16,5 +16,6 @@ public sealed record AppSettings
 {
     public AppTheme Theme { get; init; } = AppTheme.System;
 
-    public string? LastMergeFolder { get; init; }
+    /// <summary>Folders used in Merge, most recent first, capped by the ViewModel.</summary>
+    public IReadOnlyList<string> RecentMergeFolders { get; init; } = [];
 }

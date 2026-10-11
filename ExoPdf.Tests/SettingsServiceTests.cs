@@ -45,13 +45,13 @@ public class SettingsServiceTests
     [Fact]
     public void Update_KeepsSettingsTheChangeDidNotTouch()
     {
-        _store.Stored = new AppSettings { Theme = AppTheme.Dark, LastMergeFolder = @"C:\Docs" };
+        _store.Stored = new AppSettings { Theme = AppTheme.Dark, RecentMergeFolders = [@"C:\Docs"] };
         var service = CreateService();
 
         service.Update(s => s with { Theme = AppTheme.Light });
 
-        Assert.Equal(@"C:\Docs", service.Current.LastMergeFolder);
-        Assert.Equal(@"C:\Docs", _store.Saved.Single().LastMergeFolder);
+        Assert.Equal([@"C:\Docs"], service.Current.RecentMergeFolders);
+        Assert.Equal([@"C:\Docs"], _store.Saved.Single().RecentMergeFolders);
     }
 
     [Fact]
@@ -60,9 +60,10 @@ public class SettingsServiceTests
         var service = CreateService();
 
         service.Update(s => s with { Theme = AppTheme.Dark });
-        service.Update(s => s with { LastMergeFolder = @"C:\Docs" });
+        service.Update(s => s with { RecentMergeFolders = [@"C:\Docs"] });
 
-        Assert.Equal(new AppSettings { Theme = AppTheme.Dark, LastMergeFolder = @"C:\Docs" }, service.Current);
+        Assert.Equal(AppTheme.Dark, service.Current.Theme);
+        Assert.Equal([@"C:\Docs"], service.Current.RecentMergeFolders);
         Assert.Equal(2, _store.Saved.Count);
     }
 
@@ -80,11 +81,11 @@ public class SettingsServiceTests
     [Fact]
     public void Update_LoadsBeforeChanging_SoAnUnloadedFileIsNotOverwrittenWithDefaults()
     {
-        _store.Stored = new AppSettings { LastMergeFolder = @"C:\Docs" };
+        _store.Stored = new AppSettings { RecentMergeFolders = [@"C:\Docs"] };
         var service = CreateService();
 
         service.Update(s => s with { Theme = AppTheme.Dark });
 
-        Assert.Equal(@"C:\Docs", _store.Saved.Single().LastMergeFolder);
+        Assert.Equal([@"C:\Docs"], _store.Saved.Single().RecentMergeFolders);
     }
 }

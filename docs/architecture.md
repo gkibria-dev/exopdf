@@ -176,17 +176,23 @@ in `App.xaml`. The sidebar is one Tab stop and the arrow keys move between entri
 
 **Start-up.** `App.OnStartup` builds the container, applies the theme, shows the
 window, and only then awaits `MainViewModel.InitializeAsync()`, which calls each page's
-`InitializeAsync()`. Work that may be slow, such as listing the last folder, belongs
-there so it cannot delay the window. `OnStartup` is `async void`; a failure after the
-await reaches `App.DispatcherUnhandledException`.
+`InitializeAsync()`. A page's `InitializeAsync()` is for work that may be slow and
+should not delay the window; it must not assume the file system is reachable, since it
+runs unconditionally on every launch (Merge's own `InitializeAsync()` only reads
+settings, for exactly this reason — see below). `OnStartup` is `async void`; a failure
+after the await reaches `App.DispatcherUnhandledException`.
 
-**Merge view.** Selecting a folder lists the files through `IMergeSourceFinder` on a
-background thread, showing "Reading the folder…" meanwhile. Each listing takes a
-version number and a listing that finishes after a newer one has started is ignored,
-so the newest choice wins. (The file-system call cannot be cancelled; it is
-abandoned.) A folder is remembered only after it was listed successfully.
-The merge is given exactly that list (`MergeOptions.Files`), so it merges what the
-user was shown. Merging runs on a background thread (`Task.Run`, because Core and the
+**Merge view.** Selecting a folder (Browse, drag-and-drop, or picking a Recents entry)
+lists the files through `IMergeSourceFinder` on a background thread, showing "Reading
+the folder…" meanwhile. Each listing takes a version number and a listing that finishes
+after a newer one has started is ignored, so the newest choice wins. (The file-system
+call cannot be cancelled; it is abandoned.) No folder is listed automatically at
+start-up; `InitializeAsync()` only copies the persisted `RecentMergeFolders` into an
+observable `RecentFolders` list for display. A folder is added to Recents only after a
+*successful merge* of it, not merely after being browsed to or listed — picking an
+entry whose folder can no longer be listed removes it from Recents instead.
+The merge is given exactly the file list shown (`MergeOptions.Files`), so it merges what
+the user was shown. Merging runs on a background thread (`Task.Run`, because Core and the
 file-system and PDF libraries are synchronous) with a progress sink and a
 `CancellationToken`: the view shows "Merged n of N", a determinate bar and a Cancel
 button. Cancelling shows a neutral notice, not an error. When the last file is merged
